@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ForzaTek — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css">
+
+  <!-- Eel must load BEFORE app.js so the bridge exists when ForzaTek.mount runs. -->
+  <script type="text/javascript" src="/eel.js"></script>
+  <script src="app.js"></script>
+</head>
+<body>
+
+<main class="page">
+
+  <header class="page-header">
+    <div>
+      <div class="crumb">Overview</div>
+      <h1>Dashboard</h1>
+    </div>
+    <div class="pills">
+      <span class="pill nums" id="versionPill">v2 · module 1</span>
+      <span class="pill nums" id="updatedPill">—</span>
+    </div>
+  </header>
+
+  <!-- ── Workflow status cards ────────────────────────────────────────── -->
+  <section class="grid grid-auto" style="margin-bottom: 18px;">
+
+    <a href="ingest.html" class="stat-card linkable" id="cardFrames">
+      <div class="label">Frames captured</div>
+      <div class="value nums" id="vFrames">—</div>
+      <div class="sub" id="subFrames">across all game versions</div>
+    </a>
+
+    <a href="label.html" class="stat-card linkable" id="cardLabeled">
+      <div class="label">Frames labeled</div>
+      <div class="value nums" id="vLabeled">—</div>
+      <div class="sub" id="subLabeled">seg + det confirmed</div>
+    </a>
+
+    <a href="label.html" class="stat-card linkable" id="cardQueue">
+      <div class="label">Review queue</div>
+      <div class="value nums" id="vQueue">—</div>
+      <div class="sub" id="subQueue">low-confidence frames</div>
+    </a>
+
+    <a href="train.html" class="stat-card linkable" id="cardModel">
+      <div class="label">Active model</div>
+      <div class="value nums" id="vModel">—</div>
+      <div class="sub" id="subModel">no model trained</div>
+    </a>
+
+    <div class="stat-card state-idle" id="cardCapture">
+      <div class="label">Capture</div>
+      <div class="value nums" id="vCapture">idle</div>
+      <div class="sub" id="subCapture">no recording session</div>
+    </div>
+
+    <div class="stat-card state-idle" id="cardGamepad">
+      <div class="label">Virtual gamepad</div>
+      <div class="value nums" id="vGamepad">disconnected</div>
+      <div class="sub" id="subGamepad">engage from Drive page</div>
+    </div>
+
+  </section>
+
+  <!-- ── Per-game-version breakdown ──────────────────────────────────── -->
+  <section class="panel" style="margin-bottom: 18px;">
+    <div class="panel-header">Frames by game version</div>
+    <div id="byVersionBody" class="muted">—</div>
+  </section>
+
+  <!-- ── Workflow guide ──────────────────────────────────────────────── -->
+  <section class="panel">
+    <div class="panel-header">Where to start</div>
+    <ol style="padding-left: 18px; line-height: 1.8;">
+      <li><a href="ingest.html">Ingest</a> — capture or import frames (live, YouTube, video file).</li>
+      <li><a href="hud_mask.html">HUD mask</a> — mask the static game UI once per game version.</li>
+      <li><a href="label.html">Label</a> — auto-label with YOLO, fix the uncertain ones.</li>
+      <li><a href="train.html">Train</a> — train the perception model on confirmed labels.</li>
+      <li><a href="compare.html">Compare</a> — your model vs YOLO side by side.</li>
+      <li><a href="telemetry.html">Telemetry</a> — verify Forza is broadcasting on UDP.</li>
+      <li><a href="drive.html">Drive</a> — engage the rule-based or PPO policy.</li>
+    </ol>
+  </section>
+
+</main>
+
+<script>
+(function () {
+  ForzaTek.mount('dashboard');
+
+  const fmt = ForzaTek.fmt;
+
+  function setCard(idValue, idSub, value, sub, stateClass) {
+    const v = document.getElementById(idValue);
+    const s = document.getElementById(idSub);
+    if (v) v.textContent = value;
+    if (s && sub !== undefined) s.textContent = sub;
+    if (stateClass) {
+      const card = v && v.closest('.stat-card');
+      if (card) {
+        card.classList.remove('state-idle','state-ok','state-warn','state-bad');
+        card.classList.add(stateClass);
+      }
+    }
+  }
+
+  function modelLabel(m) {
+    if (!m) return ['none', 'no model trained'];
+    const name = m.name || `model #${m.id}`;
+    const round = m.round_num !== undefined ? `round ${m.round_num}` : '';
+    return [name, round];
+  }
+
+  function captureState(rt) {
+    const c = (rt && rt.capture) || {};
+    const s = c.state || 'idle';
+    if (c.error) return ['error', c.error, 'state-bad'];
+    if (s === 'recording') return ['recording', `${fmt.int(c.frames || 0)} frames captured`, 'state-ok'];
+    if (s === 'paused')    return ['paused',    'capture paused',                              'state-warn'];
+    return ['idle', 'no recording session', 'state-idle'];
+  }
+
+  function gamepadState(rt) {
+    const g = (rt && rt.gamepad) || {};
+    const s = g.state || 'disconnected';
+    if (s === 'engaged')      return ['engaged',      'autopilot active',         'state-ok'];
+    if (s === 'connected')    return ['connected',    'pad ready, not engaged',   'state-warn'];
+    if (s === 'panic')        return ['panic',        'panic-released, neutral',  'state-bad'];
+    return ['disconnected', 'engage from Drive page', 'state-idle'];
+  }
+
+  async function refresh() {
+    let res;
+    try {
+      res = await ForzaTek.eel('system_stats');
+    } catch (e) {
+      // No Eel — try the FastAPI side port.
+      try {
+        res = { ok: true, data: await ForzaTek.api.get('/api/system/stats') };
+      } catch (e2) {
+        document.getElementById('updatedPill').textContent = 'offline';
+        return;
+      }
+    }
+    if (!res || !res.ok) {
+      document.getElementById('updatedPill').textContent = 'error';
+      return;
+    }
+    const d = res.data;
+
+    setCard('vFrames', 'subFrames',
+            fmt.int(d.total_frames),
+            `${Object.keys(d.frames_by_version || {}).length} game version(s)`);
+
+    setCard('vLabeled', 'subLabeled',
+            fmt.int(d.labeled_frames),
+            `${fmt.int(d.proposed_frames)} proposed (awaiting review)`);
+
+    setCard('vQueue', 'subQueue',
+            fmt.int(d.queue_size),
+            d.queue_size > 0 ? 'review next' : 'queue empty');
+
+    const [mname, msub] = modelLabel(d.active_model);
+    setCard('vModel', 'subModel', mname, msub);
+
+    const [cv, cs, ccls] = captureState(d.runtime);
+    setCard('vCapture', 'subCapture', cv, cs, ccls);
+
+    const [gv, gs, gcls] = gamepadState(d.runtime);
+    setCard('vGamepad', 'subGamepad', gv, gs, gcls);
+
+    // Per-version breakdown
+    const body = document.getElementById('byVersionBody');
+    const bv = d.frames_by_version || {};
+    const keys = Object.keys(bv);
+    if (keys.length === 0) {
+      body.innerHTML = '<span class="muted">No frames yet — start with the Ingest page.</span>';
+    } else {
+      body.innerHTML = keys.sort().map(k =>
+        `<span class="pill nums" style="margin-right:6px;">${k.toUpperCase()} · ${fmt.int(bv[k])}</span>`
+      ).join('');
+    }
+
+    document.getElementById('updatedPill').textContent =
+      'updated ' + new Date().toLocaleTimeString();
+  }
+
+  refresh();
+  setInterval(refresh, 2000);
+})();
+</script>
+
+</body>
+</html>

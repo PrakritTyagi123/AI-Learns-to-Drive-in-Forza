@@ -1,0 +1,36 @@
+# ForzaTek AI v2 — Requirements
+# ==============================
+# This file covers Module 0 (Core) + Module 1 (System / shell / dashboard).
+# Later modules will append to this file as they're built — do NOT delete
+# anything from here when you add new lines, only add.
+#
+# Install with:
+#     pip install -r requirements.txt
+#
+# Tested on Python 3.10 and 3.12 on Windows.
+
+# ─── Module 0 (Core) ───
+# stdlib only (sqlite3, pathlib, threading, json) — nothing to pin.
+
+# ─── Module 1 (System) ───
+# Eel wraps Chromium and provides the JS↔Python bridge.
+eel==0.18.1
+
+# FastAPI side server on port 8001 — for streams and routes that Eel can't
+# do well (MJPEG, SSE in later modules). Module 1 only uses it for
+# /api/system/health and /api/system/stats, but later modules add streams.
+fastapi==0.115.5
+uvicorn==0.32.1
+
+# Pydantic is FastAPI's dep already, pinned here so it doesn't drift.
+pydantic==2.10.3
+
+# Global hotkey listener (F7/F8/F9). Optional — main.py treats it as
+# non-fatal if unavailable. On Linux it needs root, on Windows it just
+# works. Keep it in requirements for the Windows target.
+keyboard==0.13.5
+
+# ─── Test-time only (pulled in by FastAPI's TestClient) ───
+# Listed here so `pip install -r requirements.txt` is sufficient for
+# running the test suite, not just for running the app.
+httpx==0.28.1
