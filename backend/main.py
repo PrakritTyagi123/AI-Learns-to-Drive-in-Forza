@@ -43,9 +43,15 @@ import uvicorn
 # ─── Local ─────────────────────────────────────────────────────────────────
 from backend.core import database
 from backend.core.paths import FRONTEND_DIR
+
+# Module 1 — System
 from backend.system import eel_api as system_eel_api
-from backend.system import routes as system_routes
+from backend.system import routes  as system_routes
 from backend.system import hotkeys as system_hotkeys
+
+# Module 2 — Ingest
+from backend.ingest import eel_api as ingest_eel_api
+from backend.ingest import routes  as ingest_routes
 
 # ─── Logging ───────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -86,6 +92,24 @@ def _run_shutdown_hooks() -> None:
 atexit.register(_run_shutdown_hooks)
 
 
+# ─── Module 2 cleanup hook ─────────────────────────────────────────────────
+def _stop_recorder_on_exit() -> None:
+    """If the user closes the window mid-recording, stop the capture loop
+    cleanly so the worker thread joins and dxcam releases the desktop
+    duplication handle. Otherwise the next launch can fail to acquire it."""
+    try:
+        from backend.ingest.recorder import RECORDER
+        st = RECORDER.get_state()
+        if st.get("running"):
+            log.info("stopping recorder on exit")
+            RECORDER.stop()
+    except Exception as e:
+        log.warning("recorder stop on exit failed: %s", e)
+
+
+register_shutdown_hook(_stop_recorder_on_exit)
+
+
 # ─── FastAPI side server ───────────────────────────────────────────────────
 def _build_fastapi_app() -> FastAPI:
     """Create the FastAPI instance and register every module's HTTP routes."""
@@ -95,12 +119,15 @@ def _build_fastapi_app() -> FastAPI:
         version="2.0.0",
     )
 
-    # System routes (health check, etc.)
+    # Module 1 — System routes (health check)
     system_routes.register_routes(app)
 
+    # Module 2 — Ingest routes (live MJPEG preview, snapshot, health)
+    ingest_routes.register_routes(app)
+
     # As later modules are built, they register here:
-    # ingest_routes.register_routes(app)
     # hud_mask_routes.register_routes(app)
+    # labeling_routes.register_routes(app)
     # ...etc
 
     return app
@@ -145,10 +172,15 @@ def _register_all_eel_apis() -> None:
     Each module owns a `register_eel(eel)` function. Calling it imports the
     decorated functions into Eel's exposed-functions registry.
     """
+    # Module 1 — System
     system_eel_api.register_eel(eel)
+
+    # Module 2 — Ingest (record_*, ingest_*, pick_local_video)
+    ingest_eel_api.register_eel(eel)
+
     # Later modules register here:
-    # ingest_eel_api.register_eel(eel)
     # hud_mask_eel_api.register_eel(eel)
+    # labeling_eel_api.register_eel(eel)
     # ...etc
 
 

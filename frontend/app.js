@@ -8,15 +8,17 @@
  *   .eel(name, ...args) — invoke an @eel.expose Python function as a Promise.
  *   .api.get(path)      — GET against the FastAPI side server (port 8001).
  *   .api.post(path,bdy) — POST against the FastAPI side server.
+ *   .fastapiBase()      — returns the FastAPI side-server URL (for <img> src,
+ *                         MJPEG streams, etc. that can't go through Eel).
  *   .fmt.int(n)         — locale-formatted integer.
  *   .fmt.bytes(n)       — pretty bytes.
  *   .fmt.timeAgo(ts)    — "12s ago", "3m ago".
- *   .toast(msg, kind)   — transient banner, kind in {ok, warn, bad}.
+ *   .toast(msg, kind)   — transient banner. kind: ok | warn | bad | danger.
  *
  * The sidebar nav list is the source of truth for menu order. Later modules
- * append to NAV (in _MODULE_ORDER) — but for now Module 1 ships with all
- * future pages already listed so the menu is complete from the start;
- * pages that don't exist yet show "coming soon" placeholders.
+ * append to NAV — but for now Module 1 ships with all future pages already
+ * listed so the menu is complete from the start; pages that don't exist yet
+ * show "coming soon" placeholders.
  */
 (function () {
   'use strict';
@@ -173,6 +175,13 @@
     return r.json();
   }
 
+  // FastAPI side-server base URL. Used by pages that need to wire raw
+  // <img> / <video> / EventSource directly at FastAPI (e.g. MJPEG preview
+  // in Module 2's ingest.html — Eel can't carry binary streams well).
+  function fastapiBase() {
+    return FASTAPI_BASE;
+  }
+
   // ─── Formatters ───
   const fmt = {
     int(n) {
@@ -197,8 +206,10 @@
   };
 
   // ─── Toasts ───
+  // Accepts kind: 'ok' | 'warn' | 'bad' | 'danger' (alias of 'bad').
   function toast(message, kind) {
     kind = kind || 'ok';
+    if (kind === 'danger') kind = 'bad';   // tolerate the common alias
     let host = document.getElementById('ftkToastHost');
     if (!host) {
       host = document.createElement('div');
@@ -244,6 +255,7 @@
     mount,
     eel: callEel,
     api: { get: apiGet, post: apiPost },
+    fastapiBase,
     fmt,
     toast,
   };
