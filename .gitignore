@@ -1,0 +1,99 @@
+# ─────────── ForzaTek AI v2 — .gitignore ───────────
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+parts/
+sdist/
+wheels/
+share/python-wheels/
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ── Virtual environments ──
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ── Project data (never commit) ──
+# All runtime artifacts live in data/ and are huge / user-specific / regenerable.
+data/
+!data/.gitkeep
+
+# Belt-and-braces in case anything escapes data/:
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+forzatek.db
+
+# Settings (user-specific, may contain local paths)
+settings.json
+
+# Model checkpoints
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.safetensors
+
+# Captured / ingested videos
+*.mp4
+*.mkv
+*.webm
+*.avi
+*.mov
+
+# Logs
+*.log
+logs/
+
+# ── Test / coverage artifacts ──
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+.cache
+
+# Temp DBs created by tests
+forzatek_test_*/
+forzatek_settings_*/
+
+# ── IDE / editor ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Jupyter ──
+.ipynb_checkpoints/
+*.ipynb
+
+# ── OS / misc ──
+*.bak
+*.tmp
+*.orig
