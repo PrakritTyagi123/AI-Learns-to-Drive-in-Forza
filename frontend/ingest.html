@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>ForzaTek · Ingest</title>
   <link rel="stylesheet" href="app.css" />
-  <script type="text/javascript" src="/eel.js"></script>
+  <script src="/eel.js"></script>
   <script src="app.js"></script>
   <style>
     /* Page-local styles. Tokens come from app.css. */
@@ -107,6 +107,15 @@
       height: 100%; background: var(--accent);
       transition: width 0.2s ease;
     }
+    .progress-fill.indeterminate {
+      width: 40% !important;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      animation: indeterm 1.4s ease-in-out infinite;
+    }
+    @keyframes indeterm {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(250%); }
+    }
     .source-card .row {
       display: flex; justify-content: space-between;
       font-size: 11px; color: var(--ink-dim);
@@ -122,10 +131,13 @@
       border-radius: 2px;
       font-family: var(--font-mono);
     }
+    .pill-status.pending,
     .pill-status.registered  { background: var(--surface-3); color: var(--ink-dim); }
-    .pill-status.downloading { background: var(--accent-bg); color: var(--accent); }
+    .pill-status.processing,
+    .pill-status.downloading,
     .pill-status.extracting  { background: var(--accent-bg); color: var(--accent); }
     .pill-status.done        { background: var(--ok-bg); color: var(--ok); }
+    .pill-status.failed,
     .pill-status.error       { background: var(--danger-bg); color: var(--danger); }
     .pill-status.cancelled   { background: var(--surface-3); color: var(--ink-faint); }
 
@@ -146,8 +158,6 @@
   </style>
 </head>
 <body class="with-sidebar">
-  <!-- Sidebar + page header rendered by app.js -->
-
   <main class="page" id="pageRoot">
     <div class="page-header">
       <div>
@@ -157,14 +167,13 @@
       <div class="page-header-right" id="pageHeaderRight"></div>
     </div>
 
-    <!-- ── Tabs ──────────────────────────────────────────────────────── -->
     <div class="tabs">
       <button class="tab active" data-tab="live">Live</button>
       <button class="tab"        data-tab="yt">YouTube</button>
       <button class="tab"        data-tab="local">Local video</button>
     </div>
 
-    <!-- ── Live tab ─────────────────────────────────────────────────── -->
+    <!-- Live tab -->
     <section class="tab-pane active" id="tab-live">
       <div class="live-grid">
         <div class="panel">
@@ -189,6 +198,7 @@
             <div class="stat-row"><span class="k">Backend</span>        <span class="v nums" id="liveBackend">—</span></div>
             <div class="stat-row"><span class="k">Frames written</span> <span class="v nums" id="liveWritten">0</span></div>
             <div class="stat-row"><span class="k">Skipped (dup)</span>  <span class="v nums" id="liveSkipped">0</span></div>
+            <div class="stat-row"><span class="k">Failed inserts</span> <span class="v nums" id="liveFailed">0</span></div>
             <div class="stat-row"><span class="k">Resolution</span>     <span class="v nums" id="liveRes">—</span></div>
             <div class="stat-row"><span class="k">Uptime</span>         <span class="v nums" id="liveUptime">—</span></div>
           </div>
@@ -206,7 +216,7 @@
       </div>
     </section>
 
-    <!-- ── YouTube tab ──────────────────────────────────────────────── -->
+    <!-- YouTube tab -->
     <section class="tab-pane" id="tab-yt">
       <div class="panel" style="margin-bottom: 16px;">
         <div class="section-label" style="margin-bottom: 10px;">Add a YouTube video</div>
@@ -231,7 +241,7 @@
       <div id="ytSources"></div>
     </section>
 
-    <!-- ── Local video tab ─────────────────────────────────────────── -->
+    <!-- Local video tab -->
     <section class="tab-pane" id="tab-local">
       <div class="panel" style="margin-bottom: 16px;">
         <div class="section-label" style="margin-bottom: 10px;">Add a local video file</div>
@@ -258,231 +268,273 @@
   </main>
 
   <script>
-  /* ── Bootstrap shared shell ─────────────────────────────────────── */
-  ForzaTek.mount("ingest");
+  document.addEventListener("DOMContentLoaded", () => {
+    ForzaTek.mount("ingest");
 
-  /* ── Helpers ────────────────────────────────────────────────────── */
-  const $ = (id) => document.getElementById(id);
-  const fmtSec = (s) => {
-    s = Math.max(0, Math.floor(s || 0));
-    const m = Math.floor(s / 60), r = s % 60;
-    return `${m}:${String(r).padStart(2, "0")}`;
-  };
-  const eel_ = (fn, ...args) =>
-    new Promise((resolve, reject) => {
-      try { eel[fn](...args)((res) => resolve(res)); }
-      catch (e) { reject(e); }
-    });
+    // ─── Helpers ───────────────────────────────────────────────────────
+    const $ = (id) => document.getElementById(id);
+    const fmtSec = (s) => {
+      s = Math.max(0, Math.floor(s || 0));
+      const m = Math.floor(s / 60), r = s % 60;
+      return `${m}:${String(r).padStart(2, "0")}`;
+    };
+    const eel_ = (fn, ...args) =>
+      new Promise((resolve, reject) => {
+        try { eel[fn](...args)((res) => resolve(res)); }
+        catch (e) { reject(e); }
+      });
 
-  /* ── Tabs ───────────────────────────────────────────────────────── */
-  document.querySelectorAll(".tab").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
-      document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
-      btn.classList.add("active");
-      $(`tab-${btn.dataset.tab}`).classList.add("active");
-    });
-  });
+    // Schema-canonical kind values used by the backend.
+    const KIND_YOUTUBE = "youtube_url";
+    const KIND_LOCAL   = "video_file";
 
-  /* ── Live recorder ──────────────────────────────────────────────── */
-  const livePreview = $("livePreview");
-  const livePlaceholder = $("livePlaceholder");
-  const recStartBtn = $("recStart");
-  const recStopBtn  = $("recStop");
-
-  recStartBtn.addEventListener("click", async () => {
-    recStartBtn.disabled = true;
-    const r = await eel_("record_start", 0);
-    if (r && r.error) {
-      ForzaTek.toast(r.error, "danger");
-      recStartBtn.disabled = false;
-      return;
+    // Map DB status ('pending'/'processing'/'done'/'failed') and
+    // in-memory live status ('downloading'/'extracting'/etc) to a single
+    // display label. live_status (from live progress dict) wins when present.
+    function effectiveStatus(s) {
+      return s.live_status || s.status || "pending";
     }
-    // Kick off MJPEG stream (FastAPI side server, port 8001).
-    livePreview.src = `${ForzaTek.fastapiBase()}/api/ingest/preview.mjpg?t=${Date.now()}`;
-    livePreview.style.display = "block";
-    livePlaceholder.style.display = "none";
-    recStopBtn.disabled = false;
-  });
-
-  recStopBtn.addEventListener("click", async () => {
-    recStopBtn.disabled = true;
-    await eel_("record_stop");
-    livePreview.removeAttribute("src");
-    livePreview.style.display = "none";
-    livePlaceholder.style.display = "block";
-    recStartBtn.disabled = false;
-  });
-
-  function paintLive(s) {
-    if (!s) return;
-    const running = !!s.running;
-    $("liveState").textContent   = s.state || (running ? "recording" : "idle");
-    $("liveBackend").textContent = s.backend || "—";
-    $("liveWritten").textContent = s.frames_written ?? 0;
-    $("liveSkipped").textContent = s.frames_skipped_dup ?? 0;
-    $("liveRes").textContent     = (s.width && s.height) ? `${s.width}×${s.height}` : "—";
-    $("liveFps").textContent     = (s.last_fps ?? 0).toFixed(1) + " fps";
-    $("liveUptime").textContent  = fmtSec(s.uptime_sec);
-
-    recStartBtn.disabled = running;
-    recStopBtn.disabled  = !running;
-
-    // Bucket grid
-    const tbody = $("bucketTable").querySelector("tbody");
-    const buckets = (s.buckets || []).slice().sort((a, b) => b.count - a.count);
-    if (!buckets.length) {
-      tbody.innerHTML = `<tr><td colspan="5" style="color: var(--ink-faint); font-size:11px; text-align:center; padding:14px;">no frames yet</td></tr>`;
-    } else {
-      tbody.innerHTML = buckets.map(b => `
-        <tr>
-          <td>${b.game}</td><td>${b.biome}</td>
-          <td>${b.weather}</td><td>${b.time_of_day}</td>
-          <td class="nums">${b.count}</td>
-        </tr>
-      `).join("");
+    function isInFlight(status) {
+      return ["processing", "downloading", "extracting"].includes(status);
     }
-  }
+    function canStart(status) {
+      return status === "pending" || status === "registered";
+    }
 
-  async function pollLive() {
-    try { paintLive(await eel_("record_stats")); } catch (e) {}
-  }
-  setInterval(pollLive, 1000);
-  pollLive();
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+      }[c]));
+    }
 
-  /* ── Source-card rendering (shared by YouTube + Local) ──────────── */
-  function renderSourceCard(s) {
-    const p = s.progress || {};
-    const status = p.status || s.status || "registered";
-    const dlPct  = (p.download_pct || 0);
-    const exPct  = (p.extract_pct || 0);
-    const written = p.frames_written ?? s.frames_extracted ?? 0;
-    const total   = p.total_frames ?? s.total_frames ?? 0;
-    const elapsed = p.elapsed_sec || 0;
-
-    const showDl = s.kind === "youtube_url" && (status === "downloading" || dlPct > 0);
-    const canStart  = status === "registered";
-    const canCancel = (status === "downloading" || status === "extracting");
-
-    return `
-      <div class="source-card" data-id="${s.id}">
-        <div style="display:flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
-          <div style="flex: 1; min-width: 0;">
-            <div class="title">${escapeHtml(s.title || s.uri)}</div>
-            <div class="meta">
-              <span class="pill-status ${status}">${status}</span>
-              · ${s.kind} · ${s.game_version || "?"}${s.biome_override ? " · " + escapeHtml(s.biome_override) : ""}
-            </div>
-          </div>
-          <div style="display:flex; gap: 6px;">
-            ${canStart  ? `<button class="btn btn-primary" data-act="start"  data-id="${s.id}">Start</button>` : ""}
-            ${canCancel ? `<button class="btn"             data-act="cancel" data-id="${s.id}">Cancel</button>` : ""}
-          </div>
-        </div>
-
-        ${showDl ? `
-          <div class="row"><span>download</span><span class="nums">${dlPct.toFixed(1)}%</span></div>
-          <div class="progress-track"><div class="progress-fill" style="width: ${dlPct}%;"></div></div>
-        ` : ""}
-
-        <div class="row" style="margin-top: ${showDl ? "10px" : "6px"};"><span>extract</span><span class="nums">${exPct.toFixed(1)}%</span></div>
-        <div class="progress-track"><div class="progress-fill" style="width: ${exPct}%;"></div></div>
-
-        <div class="row">
-          <span>${written} frames written${total ? " of ~" + total : ""}</span>
-          <span class="nums">${fmtSec(elapsed)}</span>
-        </div>
-        ${p.error ? `<div class="row" style="color: var(--danger);"><span>error</span><span>${escapeHtml(p.error)}</span></div>` : ""}
-      </div>
-    `;
-  }
-
-  function escapeHtml(s) {
-    return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-    }[c]));
-  }
-
-  function bindSourceActions(container) {
-    container.querySelectorAll("button[data-act]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        const id  = parseInt(btn.dataset.id, 10);
-        const act = btn.dataset.act;
-        btn.disabled = true;
-        try {
-          if (act === "start")  await eel_("ingest_start",  id);
-          if (act === "cancel") await eel_("ingest_cancel", id);
-          await pollSources();
-        } catch (e) { ForzaTek.toast(String(e), "danger"); }
+    // ─── Tabs ──────────────────────────────────────────────────────────
+    document.querySelectorAll(".tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        $(`tab-${btn.dataset.tab}`).classList.add("active");
       });
     });
-  }
 
-  async function pollSources() {
-    let sources = [];
-    try { sources = await eel_("ingest_list_sources"); } catch (e) { return; }
-    if (!Array.isArray(sources)) return;
+    // ─── Live recorder ─────────────────────────────────────────────────
+    const livePreview = $("livePreview");
+    const livePlaceholder = $("livePlaceholder");
+    const recStartBtn = $("recStart");
+    const recStopBtn  = $("recStop");
 
-    const yt    = sources.filter(s => s.kind === "youtube_url");
-    const local = sources.filter(s => s.kind === "video_file");
+    recStartBtn.addEventListener("click", async () => {
+      recStartBtn.disabled = true;
+      const r = await eel_("record_start", 0);
+      if (r && r.error) {
+        ForzaTek.toast(r.error, "danger");
+        recStartBtn.disabled = false;
+        return;
+      }
+      livePreview.src = `${ForzaTek.fastapiBase()}/api/ingest/preview.mjpg?t=${Date.now()}`;
+      livePreview.style.display = "block";
+      livePlaceholder.style.display = "none";
+      recStopBtn.disabled = false;
+    });
 
-    const ytEl    = $("ytSources");
-    const localEl = $("localSources");
+    recStopBtn.addEventListener("click", async () => {
+      recStopBtn.disabled = true;
+      await eel_("record_stop");
+      livePreview.removeAttribute("src");
+      livePreview.style.display = "none";
+      livePlaceholder.style.display = "block";
+      recStartBtn.disabled = false;
+    });
 
-    ytEl.innerHTML    = yt.length    ? yt.map(renderSourceCard).join("")    : emptyMsg("No YouTube sources yet.");
-    localEl.innerHTML = local.length ? local.map(renderSourceCard).join("") : emptyMsg("No local-file sources yet.");
+    function paintLive(s) {
+      if (!s) return;
+      const running = !!s.running;
+      $("liveState").textContent   = s.state || (running ? "recording" : "idle");
+      $("liveBackend").textContent = s.backend || "—";
+      $("liveWritten").textContent = s.frames_written ?? 0;
+      $("liveSkipped").textContent = s.frames_skipped_dup ?? 0;
+      $("liveFailed").textContent  = s.frames_failed_insert ?? 0;
+      $("liveRes").textContent     = (s.width && s.height) ? `${s.width}×${s.height}` : "—";
+      $("liveFps").textContent     = (s.last_fps ?? 0).toFixed(1) + " fps";
+      $("liveUptime").textContent  = fmtSec(s.uptime_sec);
 
-    bindSourceActions(ytEl);
-    bindSourceActions(localEl);
-  }
+      recStartBtn.disabled = running;
+      recStopBtn.disabled  = !running;
 
-  function emptyMsg(text) {
-    return `<div style="color: var(--ink-faint); font-size: 12px; padding: 18px; text-align: center; border: 1px dashed var(--edge); border-radius: var(--radius);">${text}</div>`;
-  }
+      const tbody = $("bucketTable").querySelector("tbody");
+      const buckets = (s.buckets || []).slice().sort((a, b) => b.count - a.count);
+      if (!buckets.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="color: var(--ink-faint); font-size:11px; text-align:center; padding:14px;">no frames yet</td></tr>`;
+      } else {
+        tbody.innerHTML = buckets.map(b => `
+          <tr>
+            <td>${escapeHtml(b.game)}</td><td>${escapeHtml(b.biome)}</td>
+            <td>${escapeHtml(b.weather)}</td><td>${escapeHtml(b.time_of_day)}</td>
+            <td class="nums">${b.count}</td>
+          </tr>
+        `).join("");
+      }
+    }
 
-  setInterval(pollSources, 1500);
-  pollSources();
+    async function pollLive() {
+      try { paintLive(await eel_("record_stats")); } catch (e) {}
+    }
+    setInterval(pollLive, 1000);
+    pollLive();
 
-  /* ── YouTube add ────────────────────────────────────────────────── */
-  $("ytAdd").addEventListener("click", async () => {
-    const url   = $("ytUrl").value.trim();
-    const game  = $("ytGame").value || null;
-    const biome = $("ytBiome").value.trim() || null;
-    if (!url) { ForzaTek.toast("paste a YouTube URL first", "warn"); return; }
-    const r = await eel_("ingest_register_youtube", url, game, biome);
-    if (r && r.error) { ForzaTek.toast(r.error, "danger"); return; }
-    $("ytUrl").value = "";
+    // ─── Source-card rendering (shared by YouTube + Local) ────────────
+    function renderSourceCard(s) {
+      // Backend's list_sources() flattens live progress fields directly
+      // onto the source row. No nested s.progress object.
+      const status   = effectiveStatus(s);
+      const dlPct    = s.download_pct || 0;
+      const exPct    = s.extract_pct  || 0;
+      const written  = s.frames_accepted ?? 0;
+      const sampled  = s.frames_sampled  ?? 0;
+      const skDup    = s.frames_skipped_dup  ?? 0;
+      const skMenu   = s.frames_skipped_menu ?? 0;
+      const failed   = s.frames_failed_insert ?? 0;
+      const elapsed  = s.elapsed_sec || 0;
+
+      const isYT = s.kind === KIND_YOUTUBE;
+      // Show download bar for YT until extraction starts. status='downloading'
+      // OR (we're processing AND no extract progress yet).
+      const inDownload = isYT && (status === "downloading"
+                                  || (status === "processing" && exPct < 0.1));
+      const inExtract  = (status === "extracting"
+                          || (status === "processing" && exPct >= 0.1)
+                          || (status === "done" || status === "failed"));
+
+      const startable  = canStart(status);
+      const cancelable = isInFlight(status);
+
+      // Pretty status label that maps DB values to user-visible terms.
+      const niceStatus = inDownload ? "downloading"
+                       : (status === "processing" ? "extracting" : status);
+
+      return `
+        <div class="source-card" data-id="${s.id}">
+          <div style="display:flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+            <div style="flex: 1; min-width: 0;">
+              <div class="title">${escapeHtml(s.title || s.uri)}</div>
+              <div class="meta">
+                <span class="pill-status ${niceStatus}">${niceStatus}</span>
+                · ${s.kind} · ${escapeHtml(s.game_version || "?")}${s.biome_override ? " · " + escapeHtml(s.biome_override) : ""}
+              </div>
+            </div>
+            <div style="display:flex; gap: 6px;">
+              ${startable  ? `<button class="btn btn-primary" data-act="start"  data-id="${s.id}">Start</button>` : ""}
+              ${cancelable ? `<button class="btn"             data-act="cancel" data-id="${s.id}">Cancel</button>` : ""}
+            </div>
+          </div>
+
+          ${inDownload ? `
+            <div class="row" style="margin-top: 10px;"><span>download</span><span class="nums">${dlPct > 0 ? dlPct.toFixed(1) + "%" : "in progress"}</span></div>
+            <div class="progress-track"><div class="progress-fill ${dlPct === 0 ? "indeterminate" : ""}" style="width: ${dlPct || 0}%;"></div></div>
+          ` : ""}
+
+          ${inExtract ? `
+            <div class="row" style="margin-top: ${inDownload ? "10px" : "6px"};"><span>extract</span><span class="nums">${exPct.toFixed(1)}%</span></div>
+            <div class="progress-track"><div class="progress-fill" style="width: ${exPct}%;"></div></div>
+          ` : ""}
+
+          <div class="row">
+            <span>${written.toLocaleString()} frames written${sampled ? " of " + sampled.toLocaleString() + " sampled" : ""}</span>
+            <span class="nums">${fmtSec(elapsed)}</span>
+          </div>
+          ${(skDup + skMenu) > 0 ? `
+            <div class="row" style="color: var(--ink-faint); font-size: 10px;">
+              <span>skipped: ${skDup} dup / ${skMenu} menu${failed ? " · " + failed + " failed" : ""}</span>
+              <span></span>
+            </div>` : ""}
+          ${s.error ? `<div class="row" style="color: var(--danger);"><span>error</span><span>${escapeHtml(s.error)}</span></div>` : ""}
+        </div>
+      `;
+    }
+
+    function emptyMsg(text) {
+      return `<div style="color: var(--ink-faint); font-size: 12px; padding: 18px; text-align: center; border: 1px dashed var(--edge); border-radius: var(--radius);">${text}</div>`;
+    }
+
+    function bindSourceActions(container) {
+      container.querySelectorAll("button[data-act]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id  = parseInt(btn.dataset.id, 10);
+          const act = btn.dataset.act;
+          btn.disabled = true;
+          try {
+            if (act === "start")  await eel_("ingest_start",  id);
+            if (act === "cancel") await eel_("ingest_cancel", id);
+            await pollSources();
+          } catch (e) { ForzaTek.toast(String(e), "danger"); }
+        });
+      });
+    }
+
+    async function pollSources() {
+      let sources = [];
+      try { sources = await eel_("ingest_list_sources"); } catch (e) { return; }
+      if (!Array.isArray(sources)) return;
+
+      // Use the canonical schema kind values, not the old 'youtube'/'local'.
+      const yt    = sources.filter(s => s.kind === KIND_YOUTUBE);
+      const local = sources.filter(s => s.kind === KIND_LOCAL);
+
+      const ytEl    = $("ytSources");
+      const localEl = $("localSources");
+
+      ytEl.innerHTML    = yt.length    ? yt.map(renderSourceCard).join("")    : emptyMsg("No YouTube sources yet.");
+      localEl.innerHTML = local.length ? local.map(renderSourceCard).join("") : emptyMsg("No local-file sources yet.");
+
+      bindSourceActions(ytEl);
+      bindSourceActions(localEl);
+    }
+
+    // Poll faster — UI feels stuck at 1.5s intervals when frames are
+    // landing every few hundred ms.
+    setInterval(pollSources, 1000);
     pollSources();
-    // Auto-start downloads — the user clicked Add, they want it going.
-    if (r && r.id) {
-      try { await eel_("ingest_start", r.id); } catch (e) {}
-      pollSources();
-    }
-  });
 
-  /* ── Local pick + add ───────────────────────────────────────────── */
-  $("localPick").addEventListener("click", async () => {
-    const path = await eel_("pick_local_video");
-    if (path) {
-      $("localPath").value = path;
-      $("localAdd").disabled = false;
-    }
-  });
-
-  $("localAdd").addEventListener("click", async () => {
-    const path  = $("localPath").value.trim();
-    const game  = $("localGame").value || null;
-    const biome = $("localBiome").value.trim() || null;
-    if (!path) return;
-    const r = await eel_("ingest_register_local", path, game, biome);
-    if (r && r.error) { ForzaTek.toast(r.error, "danger"); return; }
-    $("localPath").value = "";
-    $("localAdd").disabled = true;
-    pollSources();
-    if (r && r.id) {
-      try { await eel_("ingest_start", r.id); } catch (e) {}
+    // ─── YouTube add ──────────────────────────────────────────────────
+    $("ytAdd").addEventListener("click", async () => {
+      const url   = $("ytUrl").value.trim();
+      const game  = $("ytGame").value || null;
+      const biome = $("ytBiome").value.trim() || null;
+      if (!url) { ForzaTek.toast("paste a YouTube URL first", "warn"); return; }
+      const r = await eel_("ingest_register_youtube", url, game, biome);
+      if (r && r.error) { ForzaTek.toast(r.error, "danger"); return; }
+      $("ytUrl").value = "";
       pollSources();
-    }
+      if (r && r.id) {
+        try { await eel_("ingest_start", r.id); } catch (e) {}
+        pollSources();
+      }
+    });
+
+    // ─── Local pick + add ─────────────────────────────────────────────
+    $("localPick").addEventListener("click", async () => {
+      const path = await eel_("pick_local_video");
+      if (path) {
+        $("localPath").value = path;
+        $("localAdd").disabled = false;
+      }
+    });
+
+    $("localAdd").addEventListener("click", async () => {
+      const path  = $("localPath").value.trim();
+      const game  = $("localGame").value || null;
+      const biome = $("localBiome").value.trim() || null;
+      if (!path) return;
+      const r = await eel_("ingest_register_local", path, game, biome);
+      if (r && r.error) { ForzaTek.toast(r.error, "danger"); return; }
+      $("localPath").value = "";
+      $("localAdd").disabled = true;
+      pollSources();
+      if (r && r.id) {
+        try { await eel_("ingest_start", r.id); } catch (e) {}
+        pollSources();
+      }
+    });
   });
   </script>
 </body>

@@ -53,6 +53,10 @@ from backend.system import hotkeys as system_hotkeys
 from backend.ingest import eel_api as ingest_eel_api
 from backend.ingest import routes  as ingest_routes
 
+# Module 3 — HUD Mask
+from backend.hud_mask import eel_api as hud_mask_eel_api
+from backend.hud_mask import routes  as hud_mask_routes
+
 # ─── Logging ───────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -125,10 +129,8 @@ def _build_fastapi_app() -> FastAPI:
     # Module 2 — Ingest routes (live MJPEG preview, snapshot, health)
     ingest_routes.register_routes(app)
 
-    # As later modules are built, they register here:
-    # hud_mask_routes.register_routes(app)
-    # labeling_routes.register_routes(app)
-    # ...etc
+    # Module 3 — HUD Mask routes (SSE stream)
+    hud_mask_routes.register_routes(app)
 
     return app
 
@@ -178,10 +180,8 @@ def _register_all_eel_apis() -> None:
     # Module 2 — Ingest (record_*, ingest_*, pick_local_video)
     ingest_eel_api.register_eel(eel)
 
-    # Later modules register here:
-    # hud_mask_eel_api.register_eel(eel)
-    # labeling_eel_api.register_eel(eel)
-    # ...etc
+    # Module 3 — HUD Mask
+    hud_mask_eel_api.register_eel(eel)
 
 
 # ─── Boot ──────────────────────────────────────────────────────────────────

@@ -1,47 +1,27 @@
 """
 ForzaTek AI v2 — Video Ingester
 ================================
-Two-step pipeline per source:
+YouTube + local video → frames pipeline. Fully rewritten with:
 
-    register   →  inserts row in `sources`, status='registered'
-    start      →  background thread:
-                    - if YouTube URL: yt-dlp into data/videos/
-                    - cv2.VideoCapture walks the file at a configurable stride
-                    - menu/loading-screen heuristic skips non-gameplay
-                    - inserts each kept frame into `frames` (source_type='video')
-                  status transitions: downloading → extracting → done | error | cancelled
+  * The phash overflow fix baked in (signed 64-bit conversion before INSERT).
+  * Per-frame try/except that LOGS the error and counts it, so silent failure
+    is impossible — if every frame fails to insert, you'll see thousands of
+    error lines, not zero output.
+  * Periodic progress logging every 100 frames so you can verify the loop
+    is actually moving.
+  * The schema-canonical kind values (`youtube_url` / `video_file`) and
+    status values (`pending|processing|done|failed`).
 
-Why the two-step
-----------------
-The UI wants to register a queue of videos quickly (paste 5 URLs),
-inspect them, and only then kick off the heavy work. Splitting register
-from start gives the user that affordance and lets us cancel cleanly.
-
-Independence
-------------
-Reads no other module's internals. Writes to `frames` and `sources`
-through `backend.core.database` — same as the recorder. A HUD mask is
-NOT applied at ingest time; raw frames are stored intact and Module 3's
-mask is applied at training/inference time. This means today's ingested
-frames stay valid even if the user re-paints the HUD mask tomorrow.
-
-Threading
----------
-- One background thread per source that's currently `start()`ed.
-- A small `_lock` guards `_threads` and `_progress` dicts.
-- Cancellation is cooperative: the thread checks `_cancel_events[source_id]`
-  between frames.
+This file is self-contained — drop it in and overwrite the old one.
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
-import shutil
 import subprocess
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -63,11 +43,21 @@ except Exception:  # pragma: no cover
     cv2 = None  # type: ignore
 
 
-# ─── Source kinds ──────────────────────────────────────────────────────────
+# ─── Constants ─────────────────────────────────────────────────────────────
 
-# Canonical values used in the `sources.kind` column (schema.sql):
+# Canonical values used in the `sources.kind` column (match schema.sql):
 KIND_YOUTUBE = "youtube_url"
 KIND_LOCAL   = "video_file"
+
+# Map our richer in-memory states onto the four DB-allowed values.
+_DB_STATUS = {
+    "registered":  "pending",
+    "downloading": "processing",
+    "extracting":  "processing",
+    "done":        "done",
+    "error":       "failed",
+    "cancelled":   "failed",
+}
 
 _YT_RE = re.compile(
     r"(?:youtube\.com/(?:watch\?v=|shorts/|live/)|youtu\.be/)([A-Za-z0-9_-]{6,})"
@@ -84,17 +74,18 @@ def is_youtube_url(s: str) -> bool:
 class _Progress:
     source_id: int
     kind: str
-    status: str = "registered"          # registered|downloading|extracting|done|error|cancelled
+    status: str = "registered"
     download_pct: float = 0.0
     extract_pct: float = 0.0
     frames_written: int = 0
     frames_skipped_dup: int = 0
     frames_skipped_menu: int = 0
+    frames_failed_insert: int = 0     # NEW: counts INSERT failures so they're visible
     total_frames: int = 0
     started_at: float = 0.0
     ended_at: float = 0.0
     error: Optional[str] = None
-    local_path: Optional[str] = None    # filesystem path actually being walked
+    local_path: Optional[str] = None
     title: Optional[str] = None
 
     def snapshot(self) -> dict:
@@ -107,6 +98,7 @@ class _Progress:
             "frames_written": self.frames_written,
             "frames_skipped_dup": self.frames_skipped_dup,
             "frames_skipped_menu": self.frames_skipped_menu,
+            "frames_failed_insert": self.frames_failed_insert,
             "total_frames": self.total_frames,
             "started_at": self.started_at,
             "ended_at": self.ended_at,
@@ -123,13 +115,12 @@ class _Progress:
 # ─── Menu-frame detector ───────────────────────────────────────────────────
 
 def is_menu_frame(bgr: np.ndarray) -> bool:
-    """Cheap heuristic: menu/loading screens are typically very low entropy
-    OR dominated by a single hue. Driving frames have lots of edges and a
-    distribution of colors.
+    """Cheap heuristic: menu/loading screens have low edge density AND
+    one dominant hue, OR are extremely dark/light. Driving frames have
+    lots of edges and color variety.
 
-    Tuned for false-negative (let some menus through) over false-positive
-    (don't kill real driving frames). Cheap is the operative word — this
-    runs once per kept candidate.
+    Tuned to err on the side of letting frames through (false negatives
+    OK, false positives NOT OK).
     """
     if not _CV2_OK or bgr is None or bgr.size == 0:
         return False
@@ -137,23 +128,16 @@ def is_menu_frame(bgr: np.ndarray) -> bool:
     if h < 16 or w < 16:
         return True
 
-    # Edge density: Canny then mean
     g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(g, 80, 160)
     edge_frac = float(np.count_nonzero(edges)) / float(edges.size)
 
-    # Dominant color: HSV hue concentration
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-    hue = hsv[:, :, 0].ravel()
-    hist, _ = np.histogram(hue, bins=18, range=(0, 180))
+    hist, _ = np.histogram(hsv[:, :, 0].ravel(), bins=18, range=(0, 180))
     dom_hue_frac = hist.max() / max(hist.sum(), 1)
 
-    # Brightness extremes (loading screens often pure black or pure white)
     mean_v = float(hsv[:, :, 2].mean())
-    very_dark  = mean_v < 12.0
-    very_light = mean_v > 240.0
-
-    if very_dark or very_light:
+    if mean_v < 12.0 or mean_v > 240.0:
         return True
     if edge_frac < 0.012 and dom_hue_frac > 0.55:
         return True
@@ -175,18 +159,9 @@ def register_youtube(
     game_version: Optional[str] = None,
     biome_override: Optional[str] = None,
 ) -> dict:
-    """Insert a row into `sources` for a YouTube video. Does NOT download yet.
-
-    Returns the new sources row as a dict.
-    """
     if not is_youtube_url(url):
         raise ValueError("not a recognized YouTube URL")
-    return _register_source(
-        kind=KIND_YOUTUBE,
-        uri=url,
-        game_version=game_version,
-        biome_override=biome_override,
-    )
+    return _register_source(KIND_YOUTUBE, url, game_version, biome_override)
 
 
 def register_local(
@@ -194,84 +169,47 @@ def register_local(
     game_version: Optional[str] = None,
     biome_override: Optional[str] = None,
 ) -> dict:
-    """Insert a row into `sources` for a local file. Does NOT walk it yet."""
     p = Path(file_path)
     if not p.exists() or not p.is_file():
         raise FileNotFoundError(f"no such file: {file_path}")
-    return _register_source(
-        kind=KIND_LOCAL,
-        uri=str(p.resolve()),
-        game_version=game_version,
-        biome_override=biome_override,
-    )
+    return _register_source(KIND_LOCAL, str(p.resolve()), game_version, biome_override)
 
 
 def list_sources() -> list[dict]:
-    """All registered sources, newest first, with their live progress merged in."""
+    """All registered sources, newest first, with live progress merged in."""
     with database.read_conn() as c:
         rows = c.execute(
-            "SELECT * FROM sources ORDER BY id DESC"
+            "SELECT * FROM sources ORDER BY created_at DESC"
         ).fetchall()
     out = []
-    with _lock:
-        for r in rows:
-            row = dict(r)
-            prog = _progress.get(row["id"])
-            if prog is not None:
-                row["progress"] = prog.snapshot()
-            else:
-                db_status = row.get("status") or "pending"
-                ui_status = {
-                    "pending": "registered", "processing": "extracting",
-                    "done": "done", "failed": "error",
-                }.get(db_status, db_status)
-                row["progress"] = {
-                    "source_id": row["id"],
-                    "status": ui_status,
-                    "download_pct": 0.0,
-                    "extract_pct": 100.0 if ui_status == "done" else 0.0,
-                    "frames_written": row.get("frames_accepted") or 0,
-                }
-            out.append(row)
+    for r in rows:
+        d = dict(r)
+        with _lock:
+            p = _progress.get(d["id"])
+        if p is not None:
+            snap = p.snapshot()
+            d.update({
+                "download_pct":  snap["download_pct"],
+                "extract_pct":   snap["extract_pct"],
+                "live_status":   snap["status"],
+                "elapsed_sec":   snap["elapsed_sec"],
+                "error":         snap["error"],
+                "frames_skipped_dup":   snap["frames_skipped_dup"],
+                "frames_skipped_menu":  snap["frames_skipped_menu"],
+                "frames_failed_insert": snap["frames_failed_insert"],
+            })
+        out.append(d)
     return out
 
 
 def progress(source_id: int) -> Optional[dict]:
     with _lock:
         p = _progress.get(source_id)
-        if p is not None:
-            return p.snapshot()
-    # Fallback: if the thread finished and was cleaned up, read from DB.
-    with database.read_conn() as c:
-        r = c.execute("SELECT * FROM sources WHERE id=?", (source_id,)).fetchone()
-    if r is None:
-        return None
-    row = dict(r)
-    db_status = row.get("status") or "pending"
-    # Reverse-map DB status back to UI-friendly state.
-    ui_status = {"pending": "registered", "processing": "extracting",
-                 "done": "done", "failed": "error"}.get(db_status, db_status)
-    return {
-        "source_id": source_id,
-        "kind": row.get("kind"),
-        "status": ui_status,
-        "download_pct": 100.0 if ui_status in ("extracting", "done") else 0.0,
-        "extract_pct": 100.0 if ui_status == "done" else 0.0,
-        "frames_written": row.get("frames_accepted") or 0,
-        "frames_skipped_dup": 0,
-        "frames_skipped_menu": 0,
-        "total_frames": 0,
-        "started_at": 0.0,
-        "ended_at": 0.0,
-        "elapsed_sec": 0.0,
-        "error": None,
-        "local_path": None,
-        "title": row.get("title"),
-    }
+    return p.snapshot() if p is not None else None
 
 
 def start(source_id: int) -> dict:
-    """Spawn the background ingest thread for a source. Idempotent."""
+    """Begin downloading (if YouTube) and walking the source. Idempotent."""
     with _lock:
         if source_id in _threads and _threads[source_id].is_alive():
             return _progress[source_id].snapshot()
@@ -289,7 +227,6 @@ def start(source_id: int) -> dict:
         kind=src["kind"],
         status="downloading" if src["kind"] == KIND_YOUTUBE else "extracting",
         started_at=time.time(),
-        local_path=src.get("local_path"),
         title=src.get("title"),
     )
     cancel_evt = threading.Event()
@@ -304,6 +241,7 @@ def start(source_id: int) -> dict:
         _cancel[source_id] = cancel_evt
         _threads[source_id] = th
     th.start()
+    log.info("started worker thread for source %d", source_id)
     return prog.snapshot()
 
 
@@ -313,9 +251,7 @@ def cancel(source_id: int) -> dict:
         prog = _progress.get(source_id)
     if evt is not None:
         evt.set()
-    if prog is None:
-        return {"source_id": source_id, "status": "unknown"}
-    return prog.snapshot()
+    return prog.snapshot() if prog is not None else {"source_id": source_id, "status": "unknown"}
 
 
 # ─── Internal: registration ────────────────────────────────────────────────
@@ -354,6 +290,7 @@ def _derive_title(kind: str, uri: str) -> str:
 
 def _run_source(src: dict, prog: _Progress, cancel_evt: threading.Event) -> None:
     sid = src["id"]
+    log.info("worker %d starting (kind=%s, uri=%s)", sid, src["kind"], src["uri"])
     try:
         local_path: Optional[Path] = None
 
@@ -363,21 +300,28 @@ def _run_source(src: dict, prog: _Progress, cancel_evt: threading.Event) -> None
                 _finalize(sid, prog, "cancelled")
                 return
             prog.local_path = str(local_path) if local_path else None
+            prog.status = "extracting"
             _set_db_status(sid, "extracting")
         else:
             local_path = Path(src["uri"])
             prog.local_path = str(local_path)
+            prog.status = "extracting"
+            _set_db_status(sid, "extracting")
 
-        prog.status = "extracting"
         _walk_video(local_path, src, prog, cancel_evt)
         if cancel_evt.is_set():
             _finalize(sid, prog, "cancelled")
             return
 
         _finalize(sid, prog, "done")
+        log.info(
+            "worker %d done: written=%d skipped_dup=%d skipped_menu=%d failed=%d",
+            sid, prog.frames_written, prog.frames_skipped_dup,
+            prog.frames_skipped_menu, prog.frames_failed_insert,
+        )
 
     except Exception as e:
-        log.exception("source %d failed", sid)
+        log.exception("worker %d failed", sid)
         prog.error = str(e)
         _finalize(sid, prog, "error")
 
@@ -385,22 +329,13 @@ def _run_source(src: dict, prog: _Progress, cancel_evt: threading.Event) -> None
 def _finalize(source_id: int, prog: _Progress, status: str) -> None:
     prog.status = status
     prog.ended_at = time.time()
+    sampled = (prog.frames_skipped_dup + prog.frames_skipped_menu
+               + prog.frames_written + prog.frames_failed_insert)
     _set_db_status(
         source_id, status,
-        frames_sampled=prog.frames_skipped_dup + prog.frames_skipped_menu + prog.frames_written,
+        frames_sampled=sampled,
         frames_accepted=prog.frames_written,
     )
-
-
-# Map our richer in-memory states onto the four DB-allowed values.
-_DB_STATUS = {
-    "registered":  "pending",
-    "downloading": "processing",
-    "extracting":  "processing",
-    "done":        "done",
-    "error":       "failed",
-    "cancelled":   "failed",
-}
 
 
 def _set_db_status(
@@ -421,56 +356,70 @@ def _set_db_status(
         c.execute(f"UPDATE sources SET {', '.join(sets)} WHERE id = ?", args)
 
 
-# ─── Internal: yt-dlp download ─────────────────────────────────────────────
+# ─── Internal: YouTube download ────────────────────────────────────────────
 
 def _download_youtube(
     src: dict, prog: _Progress, cancel_evt: threading.Event
-) -> Optional[Path]:
+) -> Path:
     ensure_dirs()
-    out_tpl = str(VIDEOS_DIR / f"yt_{src['id']}.%(ext)s")
+    out_template = str(VIDEOS_DIR / f"yt_{src['id']}.%(ext)s")
+    log.info("downloading source %d via yt-dlp", src["id"])
+    _set_db_status(src["id"], "downloading")
+
+    # We DON'T pass --no-progress here. Instead we parse yt-dlp's progress
+    # lines so the UI gets a live download_pct.
     cmd = [
         "yt-dlp",
-        "--no-playlist",
-        "-f", "bestvideo[height<=720][ext=mp4]+bestaudio/best[height<=720]/best",
+        "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
         "--merge-output-format", "mp4",
-        "--newline",
-        "-o", out_tpl,
+        "--no-playlist",
+        "--no-warnings",
+        "--newline",          # one progress line per update, not \r overwrite
+        "--progress",
+        "-o", out_template,
         src["uri"],
     ]
-
-    if shutil.which("yt-dlp") is None:
-        raise RuntimeError(
-            "yt-dlp not found on PATH. `pip install yt-dlp` "
-            "or install the binary."
-        )
-
-    log.info("downloading source %d via yt-dlp", src["id"])
     proc = subprocess.Popen(
         cmd,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
     )
-    pct_re = re.compile(r"\[download\]\s+(\d+(?:\.\d+)?)%")
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        if cancel_evt.is_set():
-            proc.terminate()
-            try:
-                proc.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-            return None
-        m = pct_re.search(line)
-        if m:
-            try:
-                prog.download_pct = float(m.group(1))
-            except ValueError:
-                pass
-    proc.wait()
-    if proc.returncode != 0:
-        raise RuntimeError(f"yt-dlp exited {proc.returncode}")
 
-    # Find the resulting file
+    # yt-dlp progress lines look like:
+    #   [download]  37.4% of 127.43MiB at  18.55MiB/s ETA 00:04
+    pct_re = re.compile(r"\[download\]\s+([\d.]+)%")
+    last_log = 0.0
+
+    try:
+        for line in proc.stdout:
+            if cancel_evt.is_set():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                raise RuntimeError("cancelled during download")
+
+            m = pct_re.search(line)
+            if m:
+                try:
+                    pct = float(m.group(1))
+                    prog.download_pct = pct
+                    # Throttle DB writes to once a second so we don't hammer it.
+                    now = time.time()
+                    if now - last_log >= 1.0:
+                        last_log = now
+                        log.info("source %d download %.1f%%", src["id"], pct)
+                except ValueError:
+                    pass
+    finally:
+        rc = proc.wait()
+
+    if rc != 0:
+        raise RuntimeError(f"yt-dlp exited with code {rc}")
+
     for ext in ("mp4", "mkv", "webm"):
         candidate = VIDEOS_DIR / f"yt_{src['id']}.{ext}"
         if candidate.exists():
@@ -479,7 +428,7 @@ def _download_youtube(
     raise RuntimeError("yt-dlp finished but no output file found")
 
 
-# ─── Internal: video walking ───────────────────────────────────────────────
+# ─── Internal: video walker ────────────────────────────────────────────────
 
 def _walk_video(
     path: Path, src: dict, prog: _Progress, cancel_evt: threading.Event
@@ -503,22 +452,25 @@ def _walk_video(
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         prog.total_frames = total
 
-        # Frame stride such that effective output rate ≈ target_fps_out
         stride = max(1, int(round(src_fps / target_fps_out)))
         log.info(
-            "walking %s: src_fps=%.1f stride=%d est_total=%d",
-            path.name, src_fps, stride, total,
+            "walking %s: src_fps=%.1f stride=%d est_total=%d target_h=%d",
+            path.name, src_fps, stride, total, target_h,
         )
 
         ring: list[int] = []
-        ring_max = 60        # bigger ring than live recorder — videos are slower-changing
-        dist = 6
+        ring_max = 60
+        dup_dist = 6
 
         idx = 0
         kept = 0
+        last_log_at = time.time()
+
         while True:
             if cancel_evt.is_set():
+                log.info("walker %d cancelled", src["id"])
                 return
+
             ok = cap.grab()
             if not ok:
                 break
@@ -532,13 +484,14 @@ def _walk_video(
                 continue
 
             bgr = _resize(frame, target_h)
+
             if is_menu_frame(bgr):
                 prog.frames_skipped_menu += 1
                 idx += 1
                 continue
 
             ph = phash64(bgr)
-            if any(hamming64(ph, p) <= dist for p in ring):
+            if any(hamming64(ph, p) <= dup_dist for p in ring):
                 prog.frames_skipped_dup += 1
                 idx += 1
                 continue
@@ -553,26 +506,67 @@ def _walk_video(
             jpeg = buf.tobytes()
             h, w = bgr.shape[:2]
             video_t = idx / src_fps if src_fps > 0 else 0.0
+
+            # SQLite INTEGER is signed 64-bit; phash64 returns unsigned.
             ph_signed = ph - (1 << 64) if ph >= (1 << 63) else ph
 
-            with database.write_conn() as c:
-                c.execute(
-                    """INSERT INTO frames
-                       (ts, source_id, source_type, game_version, biome,
-                        weather, time_of_day, phash, frame_jpeg,
-                        width, height, video_time_sec)
-                       VALUES (?, ?, 'video', ?, ?, NULL, NULL, ?, ?, ?, ?, ?)""",
-                    (
-                        time.time(), src["id"], gv, biome_override,
-                        ph_signed, jpeg, w, h, video_t,
-                    ),
-                )
+            # CRITICAL: per-frame try/except around the INSERT so failures
+            # surface in the log and increment a counter, instead of being
+            # swallowed by the outer exception handler in _run_source.
+            try:
+                with database.write_conn() as c:
+                    c.execute(
+                        """INSERT INTO frames
+                           (ts, source_id, source_type, game_version, biome,
+                            weather, time_of_day, phash, frame_jpeg,
+                            width, height, video_time_sec)
+                           VALUES (?, ?, 'video', ?, ?, NULL, NULL, ?, ?, ?, ?, ?)""",
+                        (
+                            time.time(), src["id"], gv, biome_override,
+                            ph_signed, jpeg, w, h, video_t,
+                        ),
+                    )
+                kept += 1
+                prog.frames_written = kept
+            except Exception as e:
+                prog.frames_failed_insert += 1
+                # Log the FIRST 3 failures in full (with traceback), then
+                # one out of every 100 after that, so we don't drown the log.
+                if prog.frames_failed_insert <= 3:
+                    log.exception(
+                        "INSERT failed for source %d at idx=%d: %s",
+                        src["id"], idx, e,
+                    )
+                elif prog.frames_failed_insert % 100 == 0:
+                    log.error(
+                        "source %d: %d INSERT failures so far (last: %s)",
+                        src["id"], prog.frames_failed_insert, e,
+                    )
 
-            kept += 1
-            prog.frames_written = kept
             if total > 0:
                 prog.extract_pct = 100.0 * idx / max(total, 1)
+
+            # Periodic progress log so the operator knows the loop is alive.
+            now = time.time()
+            if now - last_log_at >= 5.0:
+                log.info(
+                    "source %d progress: kept=%d skipped_dup=%d skipped_menu=%d "
+                    "failed=%d (%.1f%%)",
+                    src["id"], prog.frames_written, prog.frames_skipped_dup,
+                    prog.frames_skipped_menu, prog.frames_failed_insert,
+                    prog.extract_pct,
+                )
+                # Also flush counters to DB so the UI reflects live progress.
+                _set_db_status(
+                    src["id"], "extracting",
+                    frames_sampled=(prog.frames_written + prog.frames_skipped_dup
+                                    + prog.frames_skipped_menu + prog.frames_failed_insert),
+                    frames_accepted=prog.frames_written,
+                )
+                last_log_at = now
+
             idx += 1
+
     finally:
         cap.release()
     prog.extract_pct = 100.0

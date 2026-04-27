@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>HUD Mask · ForzaTek v2</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="/eel.js"></script>
+  <script src="app.js"></script>
+  <style>
+    /* Page-local styling. Keep in sync with app.css tokens. */
+    .hud-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 20px;
+    }
+    .canvas-wrap {
+      position: relative;
+      background: var(--panel-2, #0d0f12);
+      border: 1px solid var(--border, #222);
+      border-radius: 8px;
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .canvas-wrap.has-frame { background: #000; }
+    /* Image + canvas are stacked, both centered, both sized to fit
+       the wrapper while preserving their natural aspect ratio. They
+       share an identical layout box so paint strokes line up exactly
+       with the underlying frame pixels. */
+    .frame-stack {
+      position: relative;
+      max-width: 100%;
+      max-height: 100%;
+    }
+    #frameImg {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+    }
+    #maskCanvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+    .canvas-empty {
+      color: var(--muted, #888);
+      font-size: 14px;
+      text-align: center;
+      padding: 40px;
+    }
+    .toolbar {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+      align-items: center;
+    }
+    .toolbar .sep { width: 1px; height: 24px; background: var(--border, #222); margin: 0 4px; }
+    .tool-btn.active { background: var(--accent, #4af); color: #000; }
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .preview-grid img {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      background: #000;
+      border: 1px solid var(--border, #222);
+      border-radius: 4px;
+    }
+    .saved-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .saved-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: var(--panel-2, #0d0f12);
+      border: 1px solid var(--border, #222);
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .saved-row .meta { color: var(--muted, #888); font-size: 11px; }
+    label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted, #888); }
+    label.field select, label.field input {
+      background: var(--panel-2, #0d0f12);
+      color: var(--fg, #eee);
+      border: 1px solid var(--border, #333);
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .brush-size { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .brush-size input[type=range] { width: 100px; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-header">
+      <h1>HUD mask</h1>
+      <p class="page-sub">
+        Paint over the static game UI (minimap, speedometer, gear, lap counter)
+        on one sample frame per game version. Stored once, applied everywhere.
+      </p>
+    </header>
+
+    <section class="panel">
+      <div class="toolbar">
+        <label class="field" style="min-width: 140px;">
+          Game version
+          <select id="gameVersion"></select>
+        </label>
+        <button class="btn" id="loadSampleBtn">Load sample frame</button>
+        <div class="sep"></div>
+        <button class="btn tool-btn active" id="brushBtn">Brush</button>
+        <button class="btn tool-btn" id="eraserBtn">Eraser</button>
+        <div class="brush-size">
+          <span>Size</span>
+          <input type="range" id="brushSize" min="4" max="80" value="20">
+          <span id="brushSizeLabel">20px</span>
+        </div>
+        <div class="sep"></div>
+        <button class="btn" id="undoBtn" title="Ctrl+Z">Undo</button>
+        <button class="btn" id="redoBtn" title="Ctrl+Y">Redo</button>
+        <button class="btn" id="clearBtn">Clear all</button>
+        <div class="sep"></div>
+        <button class="btn btn-primary" id="saveBtn">Save mask</button>
+      </div>
+    </section>
+
+    <div class="hud-layout">
+      <section class="panel">
+        <div id="canvasWrap" class="canvas-wrap">
+          <div class="canvas-empty" id="canvasEmpty">
+            Pick a game version above and click <b>Load sample frame</b>.<br>
+            <span style="font-size: 12px;">If no frames are listed, ingest some first in the Ingest page.</span>
+          </div>
+          <div class="frame-stack" id="frameStack" style="display: none;">
+            <img id="frameImg" alt="">
+            <canvas id="maskCanvas"></canvas>
+          </div>
+        </div>
+
+        <div style="margin-top: 16px;">
+          <h3 style="margin: 0 0 8px 0; font-size: 13px; color: var(--muted, #888); text-transform: uppercase; letter-spacing: 0.5px;">Mask preview on other frames</h3>
+          <div class="preview-grid" id="previewGrid">
+            <div style="grid-column: span 2; color: var(--muted, #888); font-size: 12px; text-align: center; padding: 20px;">
+              Save a mask, then preview applies here.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <h3 style="margin: 0 0 10px 0; font-size: 13px; color: var(--muted, #888); text-transform: uppercase; letter-spacing: 0.5px;">Saved masks</h3>
+        <div class="saved-list" id="savedList">
+          <div style="color: var(--muted, #888); font-size: 12px;">No masks saved yet.</div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+  document.addEventListener("DOMContentLoaded", () => {
+    ForzaTek.mount("hud_mask");
+
+    // ─── State ────────────────────────────────────────────────────────────
+    const state = {
+      gameVersion: null,
+      frameId:     null,
+      naturalW:    0,
+      naturalH:    0,
+      tool:        "brush",         // "brush" | "eraser"
+      brushSize:   20,
+      drawing:     false,
+      lastXY:      null,
+      undo:        [],              // stack of ImageData
+      redo:        [],
+    };
+
+    const els = {
+      gameVersion: document.getElementById("gameVersion"),
+      loadBtn:     document.getElementById("loadSampleBtn"),
+      brushBtn:    document.getElementById("brushBtn"),
+      eraserBtn:   document.getElementById("eraserBtn"),
+      brushSize:   document.getElementById("brushSize"),
+      brushSizeLabel: document.getElementById("brushSizeLabel"),
+      undoBtn:     document.getElementById("undoBtn"),
+      redoBtn:     document.getElementById("redoBtn"),
+      clearBtn:    document.getElementById("clearBtn"),
+      saveBtn:     document.getElementById("saveBtn"),
+      wrap:        document.getElementById("canvasWrap"),
+      stack:       document.getElementById("frameStack"),
+      empty:       document.getElementById("canvasEmpty"),
+      img:         document.getElementById("frameImg"),
+      canvas:      document.getElementById("maskCanvas"),
+      preview:     document.getElementById("previewGrid"),
+      savedList:   document.getElementById("savedList"),
+    };
+    const ctx = els.canvas.getContext("2d");
+
+    // ─── Init ─────────────────────────────────────────────────────────────
+    async function init() {
+      await refreshGameVersions();
+      await refreshSavedList();
+    }
+
+    async function refreshGameVersions() {
+      const versions = await eel.hud_mask_list_versions()();
+      els.gameVersion.innerHTML = "";
+      if (!versions.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "(no frames ingested yet)";
+        opt.disabled = true;
+        els.gameVersion.appendChild(opt);
+        return;
+      }
+      for (const v of versions) {
+        const opt = document.createElement("option");
+        opt.value = v;
+        opt.textContent = v;
+        els.gameVersion.appendChild(opt);
+      }
+      state.gameVersion = versions[0];
+    }
+
+    async function refreshSavedList() {
+      const masks = await eel.hud_mask_list()();
+      els.savedList.innerHTML = "";
+      if (!masks.length) {
+        els.savedList.innerHTML = '<div style="color: var(--muted, #888); font-size: 12px;">No masks saved yet.</div>';
+        return;
+      }
+      for (const m of masks) {
+        const row = document.createElement("div");
+        row.className = "saved-row";
+        const ts = new Date(m.updated_at * 1000).toLocaleString();
+        row.innerHTML = `
+          <div>
+            <div><b>${m.game_version}</b></div>
+            <div class="meta">${m.rect_count} rect${m.rect_count === 1 ? "" : "s"} · ${ts}</div>
+          </div>
+          <button class="btn btn-small btn-danger" data-gv="${m.game_version}">Delete</button>
+        `;
+        row.querySelector("button").addEventListener("click", () => deleteMask(m.game_version));
+        els.savedList.appendChild(row);
+      }
+    }
+
+    // ─── Loading a sample frame onto the canvas ───────────────────────────
+    async function loadSample() {
+      const gv = els.gameVersion.value;
+      if (!gv) { ForzaTek.toast("Pick a game version first", "warn"); return; }
+      state.gameVersion = gv;
+
+      const sample = await eel.hud_mask_get_sample_frame(gv)();
+      if (!sample) {
+        ForzaTek.toast(`No frames found for ${gv}. Ingest some first.`, "warn");
+        return;
+      }
+      state.frameId  = sample.frame_id;
+      state.naturalW = sample.width;
+      state.naturalH = sample.height;
+
+      els.img.src = "data:image/jpeg;base64," + sample.jpeg_b64;
+      els.stack.style.display = "block";
+      els.empty.style.display = "none";
+      els.wrap.classList.add("has-frame");
+
+      // Match canvas pixel buffer to the natural frame size for crisp paint.
+      els.canvas.width  = state.naturalW;
+      els.canvas.height = state.naturalH;
+      ctx.clearRect(0, 0, state.naturalW, state.naturalH);
+
+      // Pre-fill with existing mask if one is saved for this version.
+      const existing = await eel.hud_mask_get(gv)();
+      if (existing && existing.rects && existing.rects.length) {
+        ctx.fillStyle = "rgba(255, 60, 60, 0.55)";
+        for (const r of existing.rects) {
+          ctx.fillRect(r.x * state.naturalW, r.y * state.naturalH,
+                       r.w * state.naturalW, r.h * state.naturalH);
+        }
+      }
+
+      state.undo = [snapshot()];
+      state.redo = [];
+    }
+
+    // ─── Painting ────────────────────────────────────────────────────────
+    function snapshot() {
+      return ctx.getImageData(0, 0, els.canvas.width, els.canvas.height);
+    }
+    function pushUndo() {
+      state.undo.push(snapshot());
+      if (state.undo.length > 50) state.undo.shift();
+      state.redo = [];
+    }
+    function canvasXY(evt) {
+      const rect = els.canvas.getBoundingClientRect();
+      const sx = els.canvas.width  / rect.width;
+      const sy = els.canvas.height / rect.height;
+      return {
+        x: (evt.clientX - rect.left) * sx,
+        y: (evt.clientY - rect.top)  * sy,
+      };
+    }
+    function paint(x, y) {
+      ctx.globalCompositeOperation = state.tool === "eraser" ? "destination-out" : "source-over";
+      ctx.fillStyle = "rgba(255, 60, 60, 0.55)";
+      const r = state.brushSize / 2;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    function paintLine(x0, y0, x1, y1) {
+      const dx = x1 - x0, dy = y1 - y0;
+      const dist = Math.hypot(dx, dy);
+      const steps = Math.max(1, Math.ceil(dist / (state.brushSize / 4)));
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        paint(x0 + dx * t, y0 + dy * t);
+      }
+    }
+
+    els.canvas.addEventListener("pointerdown", (e) => {
+      if (!state.frameId) return;
+      els.canvas.setPointerCapture(e.pointerId);
+      pushUndo();
+      state.drawing = true;
+      const p = canvasXY(e);
+      state.lastXY = p;
+      paint(p.x, p.y);
+    });
+    els.canvas.addEventListener("pointermove", (e) => {
+      if (!state.drawing) return;
+      const p = canvasXY(e);
+      paintLine(state.lastXY.x, state.lastXY.y, p.x, p.y);
+      state.lastXY = p;
+    });
+    function endStroke(e) {
+      if (!state.drawing) return;
+      state.drawing = false;
+      state.lastXY = null;
+      try { els.canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+    els.canvas.addEventListener("pointerup", endStroke);
+    els.canvas.addEventListener("pointercancel", endStroke);
+
+    // ─── Convert painted pixels → axis-aligned rects ──────────────────────
+    // We scan the alpha channel and find connected bounding boxes by
+    // running a coarse row-by-row scan — good enough since the mask is
+    // dozens of strokes, not millions of features.
+    function extractRects() {
+      const w = els.canvas.width, h = els.canvas.height;
+      const data = ctx.getImageData(0, 0, w, h).data;
+      // Build a binary mask: 1 if alpha>10.
+      const bin = new Uint8Array(w * h);
+      for (let i = 0; i < w * h; i++) {
+        if (data[i * 4 + 3] > 10) bin[i] = 1;
+      }
+      // Connected-component labeling (4-connectivity) using a flat union-find.
+      const parent = new Int32Array(w * h);
+      for (let i = 0; i < parent.length; i++) parent[i] = i;
+      function find(a) { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; }
+      function union(a, b) { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const idx = y * w + x;
+          if (!bin[idx]) continue;
+          if (x > 0 && bin[idx - 1])     union(idx, idx - 1);
+          if (y > 0 && bin[idx - w])     union(idx, idx - w);
+        }
+      }
+      // Bounding boxes per root.
+      const boxes = new Map();
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const idx = y * w + x;
+          if (!bin[idx]) continue;
+          const root = find(idx);
+          let b = boxes.get(root);
+          if (!b) { b = { x0: x, y0: y, x1: x, y1: y, area: 0 }; boxes.set(root, b); }
+          if (x < b.x0) b.x0 = x;
+          if (x > b.x1) b.x1 = x;
+          if (y < b.y0) b.y0 = y;
+          if (y > b.y1) b.y1 = y;
+          b.area++;
+        }
+      }
+      const rects = [];
+      const minArea = Math.max(20, (w * h) * 0.0001);  // toss specks
+      for (const b of boxes.values()) {
+        if (b.area < minArea) continue;
+        rects.push({
+          x: b.x0 / w,
+          y: b.y0 / h,
+          w: (b.x1 - b.x0 + 1) / w,
+          h: (b.y1 - b.y0 + 1) / h,
+        });
+      }
+      return rects;
+    }
+
+    // ─── Save / preview / delete ──────────────────────────────────────────
+    async function save() {
+      if (!state.frameId) { ForzaTek.toast("Load a sample frame first", "warn"); return; }
+      const rects = extractRects();
+      if (!rects.length) { ForzaTek.toast("Mask is empty — paint something first", "warn"); return; }
+      const result = await eel.hud_mask_save(state.gameVersion, rects, state.frameId)();
+      if (result && result.error) {
+        ForzaTek.toast("Save failed: " + result.error, "bad");
+        return;
+      }
+      ForzaTek.toast(`Saved mask for ${state.gameVersion} (${rects.length} rect${rects.length === 1 ? "" : "s"})`, "ok");
+      await refreshSavedList();
+      await refreshPreview();
+    }
+
+    async function refreshPreview() {
+      if (!state.gameVersion) return;
+      els.preview.innerHTML = '<div style="grid-column: span 2; color: var(--muted, #888); font-size: 12px; text-align: center; padding: 12px;">Loading previews…</div>';
+      const base = ForzaTek.fastapiBase();
+      const r = await fetch(`${base}/api/hud_mask/preview_list/${encodeURIComponent(state.gameVersion)}?n=4`);
+      const data = await r.json();
+      els.preview.innerHTML = "";
+      if (!data.frame_ids || !data.frame_ids.length) {
+        els.preview.innerHTML = '<div style="grid-column: span 2; color: var(--muted, #888); font-size: 12px; text-align: center; padding: 12px;">No frames available.</div>';
+        return;
+      }
+      for (const fid of data.frame_ids) {
+        const img = document.createElement("img");
+        img.src = `${base}/api/hud_mask/preview/${encodeURIComponent(state.gameVersion)}/${fid}`;
+        img.alt = `frame ${fid}`;
+        els.preview.appendChild(img);
+      }
+    }
+
+    async function deleteMask(gv) {
+      if (!confirm(`Delete the saved mask for ${gv}?`)) return;
+      const ok = await eel.hud_mask_delete(gv)();
+      if (ok) {
+        ForzaTek.toast(`Deleted mask for ${gv}`, "ok");
+        await refreshSavedList();
+        if (gv === state.gameVersion) await refreshPreview();
+      } else {
+        ForzaTek.toast("Delete failed", "bad");
+      }
+    }
+
+    // ─── Toolbar wiring ───────────────────────────────────────────────────
+    els.loadBtn.addEventListener("click", loadSample);
+    els.saveBtn.addEventListener("click", save);
+    els.brushBtn.addEventListener("click", () => {
+      state.tool = "brush";
+      els.brushBtn.classList.add("active");
+      els.eraserBtn.classList.remove("active");
+    });
+    els.eraserBtn.addEventListener("click", () => {
+      state.tool = "eraser";
+      els.eraserBtn.classList.add("active");
+      els.brushBtn.classList.remove("active");
+    });
+    els.brushSize.addEventListener("input", () => {
+      state.brushSize = +els.brushSize.value;
+      els.brushSizeLabel.textContent = state.brushSize + "px";
+    });
+    els.clearBtn.addEventListener("click", () => {
+      if (!state.frameId) return;
+      pushUndo();
+      ctx.clearRect(0, 0, els.canvas.width, els.canvas.height);
+    });
+    els.undoBtn.addEventListener("click", () => {
+      if (state.undo.length < 2) return;
+      state.redo.push(state.undo.pop());
+      ctx.putImageData(state.undo[state.undo.length - 1], 0, 0);
+    });
+    els.redoBtn.addEventListener("click", () => {
+      if (!state.redo.length) return;
+      const data = state.redo.pop();
+      state.undo.push(data);
+      ctx.putImageData(data, 0, 0);
+    });
+    document.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); els.undoBtn.click(); }
+      else if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.shiftKey && e.key === "Z"))) { e.preventDefault(); els.redoBtn.click(); }
+    });
+    els.gameVersion.addEventListener("change", () => {
+      state.gameVersion = els.gameVersion.value;
+    });
+
+    init();
+  });
+  </script>
+</body>
+</html>
