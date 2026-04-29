@@ -1,8 +1,8 @@
 # ForzaTek AI v2 — Requirements
 # ==============================
-# Covers Module 0 (Core) + Module 1 (System) + Module 2 (Ingest).
-# Later modules will append to this file as they're built — do NOT delete
-# anything from here when you add new lines, only add.
+# Covers Module 0 (Core) + Module 1 (System) + Module 2 (Ingest) +
+# Module 3 (HUD Mask) + Module 4 (Labeling).
+# Later modules will append to this file as they're built.
 #
 # Install with:
 #     pip install -r requirements.txt
@@ -13,41 +13,35 @@
 # stdlib only (sqlite3, pathlib, threading, json) — nothing to pin.
 
 # ─── Module 1 (System) ───
-# Eel wraps Chromium and provides the JS↔Python bridge.
 eel==0.18.1
-
-# FastAPI side server on port 8001 — for streams and routes that Eel can't
-# do well (MJPEG, SSE in later modules).
 fastapi==0.115.5
 uvicorn==0.32.1
-
-# Pydantic is FastAPI's dep already, pinned here so it doesn't drift.
 pydantic==2.10.3
-
-# Global hotkey listener (F7/F8/F9).
 keyboard==0.13.5
 
 # ─── Module 2 (Ingest) ───
-# Numerical arrays for frame buffers, pHash math, dedup ring.
 numpy>=1.26,<2.3
-
-# OpenCV: video walking, JPEG encode/decode, pHash DCT, menu-detector
-# (Canny + HSV histogram). The "headless" build avoids pulling Qt on
-# servers; on dev machines that need a window, swap to opencv-python.
 opencv-python-headless>=4.9,<5.0
-
-# Live screen capture on Windows (preferred path in recorder.py).
-# Pure-Python fallback is mss; both are listed so the recorder picks
-# whichever is available at runtime.
 dxcam==0.0.5 ; sys_platform == "win32"
 mss>=9.0,<11.0
-
-# Cross-process HTTP for telemetry tag fetching. The recorder polls
-# Module 7's /api/telemetry/live but does NOT import telemetry code —
-# this is the keep-modules-independent rule in action.
 requests>=2.31,<3
+yt-dlp
 
-# YouTube downloader. Used by video_ingester.py via subprocess.
-# Update this regularly — yt-dlp ships breaking site-extractor changes
-# every few weeks and an old pin will silently fail to download.
-yt-dlp>=2025.1.15
+# ─── Module 3 (HUD Mask) ───
+# No new dependencies — reuses numpy + opencv-python-headless.
+
+# ─── Module 4 (Labeling) ───
+# YOLOv8 for object detection (vehicles, signs).
+# Pulls in torch and torchvision automatically. The first call to YOLO()
+# downloads yolov8n.pt (~6 MB) from Ultralytics' CDN to ~/.config/Ultralytics.
+ultralytics>=8.2,<9.0
+
+# Hugging Face Transformers for SegFormer-B0 (Cityscapes pretrained).
+# First inference downloads the model (~14 MB) to ~/.cache/huggingface.
+transformers>=4.40,<5.0
+# torch is pulled in transitively by ultralytics, but pin a sane lower bound
+# in case anyone installs transformers first.
+torch>=2.2,<3
+# CUDA users: if you want GPU, install torch from https://pytorch.org first
+# with the CUDA wheel matching your driver, THEN run pip install -r requirements.txt.
+# Otherwise pip will install CPU-only torch and inference will be slow but work.

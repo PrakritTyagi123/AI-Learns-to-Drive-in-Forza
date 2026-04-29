@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ForzaTek — Labeling</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css" />
+  <script type="text/javascript" src="/eel.js"></script>
+  <script src="app.js"></script>
+
+  <style>
+    /* ─── Page layout ───────────────────────────────────────────────────── */
+    .label-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 14px;
+      align-items: start;
+    }
+
+    /* ─── Toolbar shared (matches hud_mask page pattern) ────────────────── */
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+      flex-wrap: wrap;
+    }
+    .toolbar .sep {
+      width: 1px; height: 20px;
+      background: var(--edge);
+      margin: 0 4px;
+    }
+    .toolbar label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+    }
+
+    /* ─── Buttons (extends app.css .btn) ────────────────────────────────── */
+    .btn {
+      background: var(--surface-2);
+      color: var(--ink);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      padding: 6px 12px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .btn:hover:not(:disabled) {
+      border-color: var(--edge-hot);
+      background: var(--surface-3);
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.btn-primary {
+      background: var(--accent-bg);
+      border-color: var(--accent-dim);
+      color: var(--accent);
+    }
+    .btn.btn-primary:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+      color: var(--ink);
+    }
+    .btn.btn-danger {
+      background: var(--danger-bg);
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+    .btn.btn-danger:hover:not(:disabled) {
+      background: var(--danger);
+      color: var(--ink);
+    }
+    .btn.active {
+      background: var(--accent-bg);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .toolbar select, .toolbar input[type="number"], .toolbar input[type="text"] {
+      background: var(--surface-3);
+      color: var(--ink);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      padding: 5px 8px;
+      font: inherit;
+      font-size: 12px;
+    }
+    .toolbar input[type="range"] {
+      accent-color: var(--accent);
+      width: 100px;
+    }
+
+    /* ─── Canvas (16:9 aspect-locked) ────────────────────────────────────── */
+    .canvas-wrap {
+      position: relative;
+      background: #000;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      aspect-ratio: 16 / 9;     /* ← always 16:9 */
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .canvas-wrap canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    #frameCanvas    { z-index: 1; }
+    #segCanvas      { z-index: 2; opacity: 0.40; pointer-events: none;
+                      mix-blend-mode: screen; }
+    #paintCanvas    { z-index: 3; cursor: crosshair; }
+    #boxCanvas      { z-index: 4; pointer-events: none; }
+    .canvas-empty {
+      position: relative;
+      z-index: 10;
+      color: var(--ink-faint);
+      font-size: 13px;
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    /* ─── Status bar ────────────────────────────────────────────────────── */
+    .status-bar {
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .status-bar .frame-info { color: var(--ink-dim); }
+
+    /* ─── Side panels ───────────────────────────────────────────────────── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+      padding: 14px;
+    }
+    .panel-header {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      font-size: 12px;
+      color: var(--ink-dim);
+    }
+    .row .v {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      color: var(--ink);
+    }
+    .row input[type="number"] {
+      width: 64px;
+      background: var(--surface-3);
+      color: var(--ink);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      padding: 3px 6px;
+      font: inherit;
+      font-size: 12px;
+      text-align: right;
+    }
+
+    /* ─── Class picker ──────────────────────────────────────────────────── */
+    .class-picker { display: flex; gap: 6px; flex-wrap: wrap; }
+    .class-picker .chip {
+      padding: 5px 10px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      border: 1px solid var(--edge);
+      user-select: none;
+      color: var(--ink-dim);
+      background: var(--surface-2);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .class-picker .chip:hover { border-color: var(--edge-hot); }
+    .class-picker .chip.active {
+      border-color: var(--ink);
+      color: var(--ink);
+      background: var(--surface-3);
+    }
+    .class-picker .chip .swatch {
+      width: 10px; height: 10px;
+      border-radius: 2px;
+      border: 1px solid rgba(255,255,255,0.3);
+    }
+
+    /* ─── Pills (decision indicators) ───────────────────────────────────── */
+    .pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      color: var(--ink-dim);
+      background: var(--surface-2);
+    }
+    .pill.ok    { color: var(--ok);    border-color: var(--ok);    background: var(--ok-bg); }
+    .pill.warn  { color: var(--warn);  border-color: var(--warn);  background: var(--warn-bg); }
+    .pill.bad   { color: var(--danger);border-color: var(--danger);background: var(--danger-bg); }
+
+    /* ─── Live preview mini-canvas ──────────────────────────────────────── */
+    .preview-canvas-wrap {
+      position: relative;
+      background: #000;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+      width: 100%;
+    }
+    .preview-canvas-wrap img,
+    .preview-canvas-wrap canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .preview-canvas-wrap #previewSeg { opacity: 0.40; mix-blend-mode: screen; }
+
+    /* ─── Queue list ────────────────────────────────────────────────────── */
+    .queue-list {
+      max-height: 180px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .queue-list .item {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 6px;
+      border-radius: var(--radius);
+    }
+    .queue-list .item:hover { background: var(--surface-2); }
+
+    /* ─── Hotkey help ───────────────────────────────────────────────────── */
+    .hotkey-help { font-family: var(--font-mono); font-size: 10px;
+                   color: var(--ink-faint); line-height: 1.8; }
+    .hotkey-help kbd {
+      background: var(--surface-3);
+      border: 1px solid var(--edge);
+      border-radius: 2px;
+      padding: 1px 5px;
+      color: var(--ink-dim);
+      font-family: inherit;
+    }
+
+    /* ─── Action bar (centered accept/save/skip) ────────────────────────── */
+    .action-bar {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+    }
+
+    /* Mobile responsive — stack columns under 1100px */
+    @media (max-width: 1100px) {
+      .label-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<main class="page">
+
+  <header class="page-header">
+    <div>
+      <div class="crumb">Module 4</div>
+      <h1>Labeling</h1>
+    </div>
+    <div class="pills">
+      <span class="pill" id="progressPill">— / —</span>
+      <span class="pill" id="queuePill">queue —</span>
+    </div>
+  </header>
+
+  <div class="label-grid">
+
+    <!-- ═══════════════════════════ Canvas column ═══════════════════════════ -->
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+
+      <!-- Tool selection -->
+      <div class="toolbar">
+        <label>Tool</label>
+        <button class="btn active" id="toolPaint">Brush</button>
+        <button class="btn" id="toolBox">Box</button>
+        <div class="sep"></div>
+        <label>Brush</label>
+        <input id="brushSize" type="range" min="2" max="80" value="14" />
+        <span class="nums" id="brushSizeLabel" style="color: var(--ink-dim); font-size: 11px;">14px</span>
+        <div class="sep"></div>
+        <button class="btn" id="undoBtn" title="Ctrl+Z">Undo</button>
+        <button class="btn" id="redoBtn" title="Ctrl+Y">Redo</button>
+      </div>
+
+      <!-- Class picker -->
+      <div class="toolbar">
+        <label>Class</label>
+        <div class="class-picker" id="classPicker"></div>
+      </div>
+
+      <!-- Canvas wrap -->
+      <div class="canvas-wrap" id="canvasWrap">
+        <div class="canvas-empty" id="canvasEmpty">No frame loaded yet…</div>
+        <canvas id="frameCanvas"></canvas>
+        <canvas id="segCanvas"></canvas>
+        <canvas id="paintCanvas"></canvas>
+        <canvas id="boxCanvas"></canvas>
+      </div>
+
+      <!-- Status bar -->
+      <div class="status-bar">
+        <span class="frame-info" id="frameInfo">No frame loaded</span>
+        <span class="pill" id="frameDecisionPill">—</span>
+      </div>
+
+      <!-- Action bar -->
+      <div class="action-bar">
+        <button class="btn btn-primary" id="acceptBtn" title="A">Accept (A)</button>
+        <button class="btn btn-primary" id="saveBtn" title="Space">Save edits (Space)</button>
+        <button class="btn" id="resetBtn" title="R">Reset (R)</button>
+        <button class="btn btn-danger" id="unlabelBtn" title="U">Unlabel (U)</button>
+        <button class="btn" id="skipBtn" title="N">Skip (N)</button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════ Side column ═══════════════════════════ -->
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+
+      <!-- Auto-labeler controls -->
+      <div class="panel">
+        <div class="panel-header">
+          <span>Auto-labeler</span>
+          <span class="pill" id="autoStatusPill">idle</span>
+        </div>
+        <div class="row"><span>Processed</span><span class="v" id="autoProcessed">0 / 0</span></div>
+        <div class="row"><span>Trusted</span><span class="v" id="autoTrusted">0</span></div>
+        <div class="row"><span>Queued</span><span class="v" id="autoQueued">0</span></div>
+        <div class="row"><span>Failed</span><span class="v" id="autoFailed">0</span></div>
+        <div class="row"><span>Speed</span><span class="v" id="autoFps">— fps</span></div>
+
+        <div style="height: 8px;"></div>
+
+        <div class="row" title="YOLO min box confidence">
+          <span>Conf threshold</span>
+          <input id="confThreshold" type="number" step="0.05" min="0" max="1" value="0.85" />
+        </div>
+        <div class="row" title="% pixels SegFormer must be decisive about">
+          <span>Decisive %</span>
+          <input id="decisiveThreshold" type="number" step="0.05" min="0" max="1" value="0.85" />
+        </div>
+        <div class="row">
+          <span>Batch size</span>
+          <input id="batchSize" type="number" step="1" min="1" max="32" value="16" />
+        </div>
+
+        <div style="display: flex; gap: 6px; margin-top: 10px;">
+          <button class="btn btn-primary" id="autoStartBtn" style="flex:1">Start</button>
+          <button class="btn btn-danger"  id="autoCancelBtn" style="flex:1">Cancel</button>
+        </div>
+
+        <button class="btn" id="rerunQueueBtn" style="width:100%; margin-top: 6px;"
+                title="Re-process queued frames against current thresholds. Some may now auto-trust.">
+          Re-run queue (current settings)
+        </button>
+      </div>
+
+      <!-- Live preview -->
+      <div class="panel">
+        <div class="panel-header">
+          <span>Live preview</span>
+          <span class="pill" id="prevDecisionPill">—</span>
+        </div>
+        <div class="preview-canvas-wrap" id="previewWrap">
+          <img id="previewFrame" alt="" />
+          <canvas id="previewSeg"></canvas>
+          <canvas id="previewBoxes"></canvas>
+        </div>
+        <div class="row" style="margin-top: 8px;"><span>Frame</span><span class="v" id="prevFrameId">—</span></div>
+        <div class="row"><span>% road</span><span class="v" id="prevPctRoad">—</span></div>
+        <div class="row"><span>% decisive</span><span class="v" id="prevPctDecisive">—</span></div>
+        <div class="row"><span>YOLO min conf</span><span class="v" id="prevMinConf">—</span></div>
+      </div>
+
+      <!-- Progress -->
+      <div class="panel">
+        <div class="panel-header"><span>Dataset progress</span></div>
+        <div class="row"><span>Total frames</span><span class="v" id="progTotal">0</span></div>
+        <div class="row"><span>Unlabeled</span>   <span class="v" id="progUnlabeled">0</span></div>
+        <div class="row"><span>Queued</span>      <span class="v" id="progQueued">0</span></div>
+        <div class="row"><span>Labeled</span>     <span class="v" id="progLabeled">0</span></div>
+        <div class="row"><span>Skipped</span>     <span class="v" id="progSkipped">0</span></div>
+      </div>
+
+      <!-- Queue (worst first) -->
+      <div class="panel">
+        <div class="panel-header"><span>Queue (worst first)</span></div>
+        <div id="queueList" class="queue-list"></div>
+      </div>
+
+      <!-- Hotkeys -->
+      <div class="panel">
+        <div class="panel-header"><span>Hotkeys</span></div>
+        <div class="hotkey-help">
+          <kbd>A</kbd> accept &nbsp;
+          <kbd>Space</kbd> save &nbsp;
+          <kbd>R</kbd> reset<br/>
+          <kbd>U</kbd> unlabel &nbsp;
+          <kbd>N</kbd> skip<br/>
+          <kbd>1</kbd>–<kbd>4</kbd> class &nbsp;
+          <kbd>B</kbd> brush &nbsp;
+          <kbd>V</kbd> box<br/>
+          <kbd>[</kbd> <kbd>]</kbd> brush size &nbsp;
+          <kbd>Ctrl+Z</kbd> undo
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  ForzaTek.mount("label");
+
+  // ROAD-ONLY MODE: prelabeler emits a binary mask
+  //   id 1   = road (green, auto-labeled)
+  //   id 255 = unknown (transparent)
+  // 0/2/3 are kept for manual painting (offroad, curb, wall) only.
+  const SEG_CLASSES = [
+    { id: 1, name: "road",    color: [80, 220, 130] },
+    { id: 0, name: "offroad", color: [220, 140, 40] },
+    { id: 2, name: "curb",    color: [80, 200, 240] },
+    { id: 3, name: "wall",    color: [220, 80, 220] },
+  ];
+  const SEG_BY_ID = {};
+  for (const c of SEG_CLASSES) SEG_BY_ID[c.id] = c;
+
+  const S = {
+    frameId: null,
+    width: 0,
+    height: 0,
+    gameVersion: null,
+    uncertainty: null,
+    tool: "paint",
+    classId: 1,
+    brushSize: 14,
+    detClass: "vehicle",
+    paintMask: null,
+    boxes: [],
+    undoStack: [],
+    redoStack: [],
+    drawing: false,
+    hasProposal: false,
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const frameCanvas = $("frameCanvas");
+  const segCanvas   = $("segCanvas");
+  const paintCanvas = $("paintCanvas");
+  const boxCanvas   = $("boxCanvas");
+  const wrap        = $("canvasWrap");
+  const empty       = $("canvasEmpty");
+
+  buildClassPicker();
+  bindToolbar();
+  bindCanvas();
+  bindHotkeys();
+  bindAutoLabeler();
+
+  refreshProgress();
+  refreshAutoStatus();
+  loadNextFrame();
+  setInterval(refreshProgress,    5000);
+  setInterval(refreshAutoStatus,  2000);
+  setInterval(refreshPreview,      500);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Class picker + tool buttons
+  // ═══════════════════════════════════════════════════════════════════════
+  function buildClassPicker() {
+    const picker = $("classPicker");
+    picker.innerHTML = "";
+    SEG_CLASSES.forEach((c, i) => {
+      const chip = document.createElement("div");
+      chip.className = "chip" + (c.id === S.classId ? " active" : "");
+      chip.dataset.classId = c.id;
+      chip.innerHTML = `<span class="swatch" style="background: rgb(${c.color.join(",")})"></span>${i+1}. ${c.name}`;
+      chip.addEventListener("click", () => setClass(c.id));
+      picker.appendChild(chip);
+    });
+  }
+
+  function setClass(id) {
+    S.classId = id;
+    document.querySelectorAll(".class-picker .chip").forEach((el) => {
+      el.classList.toggle("active", parseInt(el.dataset.classId) === id);
+    });
+  }
+
+  function bindToolbar() {
+    $("toolPaint").addEventListener("click", () => setTool("paint"));
+    $("toolBox").addEventListener("click",   () => setTool("box"));
+    $("brushSize").addEventListener("input", (e) => {
+      S.brushSize = parseInt(e.target.value);
+      $("brushSizeLabel").textContent = S.brushSize + "px";
+    });
+
+    $("acceptBtn").addEventListener("click",  onAccept);
+    $("saveBtn").addEventListener("click",    onSave);
+    $("resetBtn").addEventListener("click",   onReset);
+    $("unlabelBtn").addEventListener("click", onUnlabel);
+    $("skipBtn").addEventListener("click",    onSkip);
+    $("undoBtn").addEventListener("click",    undo);
+    $("redoBtn").addEventListener("click",    redo);
+  }
+
+  function setTool(t) {
+    S.tool = t;
+    $("toolPaint").classList.toggle("active", t === "paint");
+    $("toolBox").classList.toggle("active",   t === "box");
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Frame loading
+  // ═══════════════════════════════════════════════════════════════════════
+  async function loadNextFrame() {
+    const next = await eel.label_next({})();
+    if (!next) {
+      $("frameInfo").textContent = "No frames left to label";
+      empty.style.display = "block";
+      empty.textContent = "No frames to label. Run the auto-labeler or ingest more frames.";
+      $("frameDecisionPill").textContent = "—";
+      $("frameDecisionPill").className = "pill";
+      return;
+    }
+
+    S.frameId      = next.frame_id;
+    S.width        = next.width || 1280;
+    S.height       = next.height || 720;
+    S.gameVersion  = next.game_version;
+    S.uncertainty  = next.uncertainty;
+
+    empty.style.display = "none";
+
+    // The canvases match the frame's aspect — we set their internal pixel
+    // size to the frame's actual resolution; the wrap (16:9) handles display.
+    for (const c of [frameCanvas, segCanvas, paintCanvas, boxCanvas]) {
+      c.width  = S.width;
+      c.height = S.height;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      frameCanvas.getContext("2d").drawImage(img, 0, 0);
+    };
+    img.onerror = () => {
+      console.warn("Failed to load frame", S.frameId);
+    };
+    img.src = `http://127.0.0.1:8001/api/label/frame/${S.frameId}?mask=0&t=${Date.now()}`;
+
+    S.paintMask = new Uint8Array(S.width * S.height).fill(255);
+    S.boxes = [];
+    S.undoStack = [];
+    S.redoStack = [];
+    clearOverlay(segCanvas);
+    clearOverlay(paintCanvas);
+    clearOverlay(boxCanvas);
+
+    const props = await eel.label_proposals(S.frameId)();
+    S.hasProposal = !!(props && props.has_proposals);
+    if (props && props.seg && props.seg.mask_png_b64) {
+      drawSegOverlay(props.seg.mask_png_b64);
+    }
+    if (props && props.det && props.det.boxes) {
+      S.boxes = props.det.boxes.slice();
+      drawBoxes();
+    }
+
+    const u = (S.uncertainty != null) ? `unc ${S.uncertainty.toFixed(2)}` : "fresh";
+    $("frameInfo").textContent =
+      `frame #${S.frameId} · ${S.width}×${S.height} · ${S.gameVersion || "?"} · ${u}`;
+
+    // Decision pill
+    if (next.from_queue) {
+      $("frameDecisionPill").textContent = "queued";
+      $("frameDecisionPill").className = "pill warn";
+    } else {
+      $("frameDecisionPill").textContent = "fresh";
+      $("frameDecisionPill").className = "pill";
+    }
+  }
+
+  function clearOverlay(c) {
+    c.getContext("2d").clearRect(0, 0, c.width, c.height);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Seg proposal overlay (also used by live preview panel)
+  // ═══════════════════════════════════════════════════════════════════════
+  function colorizeMaskTo(canvasEl, maskB64) {
+    const img = new Image();
+    img.onload = () => {
+      canvasEl.width  = img.width;
+      canvasEl.height = img.height;
+      const tmp = document.createElement("canvas");
+      tmp.width = img.width; tmp.height = img.height;
+      const tctx = tmp.getContext("2d");
+      tctx.drawImage(img, 0, 0);
+      const data = tctx.getImageData(0, 0, img.width, img.height);
+      for (let i = 0; i < data.data.length; i += 4) {
+        const cid = data.data[i];
+        const c = SEG_BY_ID[cid];
+        if (c) {
+          data.data[i]   = c.color[0];
+          data.data[i+1] = c.color[1];
+          data.data[i+2] = c.color[2];
+          data.data[i+3] = 255;
+        } else {
+          data.data[i+3] = 0;
+        }
+      }
+      canvasEl.getContext("2d").putImageData(data, 0, 0);
+    };
+    img.src = "data:image/png;base64," + maskB64;
+  }
+
+  function drawSegOverlay(maskB64) {
+    colorizeMaskTo(segCanvas, maskB64);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Brush + box drawing
+  // ═══════════════════════════════════════════════════════════════════════
+  function canvasPos(e) {
+    const r = paintCanvas.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width)  * S.width;
+    const y = ((e.clientY - r.top)  / r.height) * S.height;
+    return { x: Math.round(x), y: Math.round(y) };
+  }
+
+  function bindCanvas() {
+    paintCanvas.addEventListener("pointerdown", (e) => {
+      if (!S.frameId) return;
+      pushUndo();
+      S.drawing = true;
+      if (S.tool === "paint") paintAt(canvasPos(e));
+      else if (S.tool === "box") startBox(canvasPos(e));
+    });
+    paintCanvas.addEventListener("pointermove", (e) => {
+      if (!S.drawing) return;
+      if (S.tool === "paint") paintAt(canvasPos(e));
+      else if (S.tool === "box") updateBox(canvasPos(e));
+    });
+    paintCanvas.addEventListener("pointerup", () => {
+      if (S.drawing && S.tool === "box") finishBox();
+      S.drawing = false;
+    });
+    paintCanvas.addEventListener("pointerleave", () => { S.drawing = false; });
+  }
+
+  function paintAt(p) {
+    const r = S.brushSize;
+    const ctx = paintCanvas.getContext("2d");
+    const c = SEG_BY_ID[S.classId];
+    ctx.fillStyle = `rgba(${c.color.join(",")},0.7)`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx*dx + dy*dy > r*r) continue;
+        const x = p.x + dx, y = p.y + dy;
+        if (x < 0 || y < 0 || x >= S.width || y >= S.height) continue;
+        S.paintMask[y * S.width + x] = S.classId;
+      }
+    }
+  }
+
+  let _boxStart = null, _boxLive = null;
+  function startBox(p) { _boxStart = p; _boxLive = p; }
+  function updateBox(p) { _boxLive = p; drawBoxes(_boxStart, _boxLive); }
+  function finishBox() {
+    if (!_boxStart || !_boxLive) return;
+    const x1 = Math.min(_boxStart.x, _boxLive.x), y1 = Math.min(_boxStart.y, _boxLive.y);
+    const x2 = Math.max(_boxStart.x, _boxLive.x), y2 = Math.max(_boxStart.y, _boxLive.y);
+    const bw = x2 - x1, bh = y2 - y1;
+    if (bw > 4 && bh > 4) {
+      S.boxes.push({
+        cls: S.detClass,
+        x: (x1 + bw/2) / S.width,
+        y: (y1 + bh/2) / S.height,
+        w: bw / S.width,
+        h: bh / S.height,
+        confidence: 1.0,
+      });
+    }
+    _boxStart = null; _boxLive = null;
+    drawBoxes();
+  }
+
+  function drawBoxes(liveStart, liveEnd) {
+    const ctx = boxCanvas.getContext("2d");
+    ctx.clearRect(0, 0, boxCanvas.width, boxCanvas.height);
+    ctx.lineWidth = 2;
+    ctx.font = "12px 'JetBrains Mono', monospace";
+
+    for (const b of S.boxes) {
+      const px = (b.x - b.w/2) * S.width;
+      const py = (b.y - b.h/2) * S.height;
+      const pw = b.w * S.width;
+      const ph = b.h * S.height;
+      const lowConf = (b.confidence != null && b.confidence < 0.5);
+      ctx.strokeStyle = lowConf ? "#d4a04a"
+                                : (b.cls === "vehicle" ? "#ff8c40" : "#ff4040");
+      ctx.strokeRect(px, py, pw, ph);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillText(`${b.cls} ${(b.confidence ?? 1).toFixed(2)}`, px + 2, py - 4);
+    }
+
+    if (liveStart && liveEnd) {
+      const x1 = Math.min(liveStart.x, liveEnd.x), y1 = Math.min(liveStart.y, liveEnd.y);
+      ctx.strokeStyle = "#e6e8eb";
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(x1, y1, Math.abs(liveEnd.x - liveStart.x), Math.abs(liveEnd.y - liveStart.y));
+      ctx.setLineDash([]);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Undo/redo
+  // ═══════════════════════════════════════════════════════════════════════
+  function snapshot() {
+    return {
+      paintMask: new Uint8Array(S.paintMask),
+      boxes: JSON.parse(JSON.stringify(S.boxes)),
+      paintImg: paintCanvas.getContext("2d").getImageData(0, 0, S.width, S.height),
+    };
+  }
+  function pushUndo() {
+    if (!S.paintMask) return;
+    S.undoStack.push(snapshot());
+    if (S.undoStack.length > 20) S.undoStack.shift();
+    S.redoStack = [];
+  }
+  function undo() {
+    if (S.undoStack.length === 0) return;
+    S.redoStack.push(snapshot());
+    const s = S.undoStack.pop();
+    S.paintMask = s.paintMask;
+    S.boxes = s.boxes;
+    paintCanvas.getContext("2d").putImageData(s.paintImg, 0, 0);
+    drawBoxes();
+  }
+  function redo() {
+    if (S.redoStack.length === 0) return;
+    S.undoStack.push(snapshot());
+    const s = S.redoStack.pop();
+    S.paintMask = s.paintMask;
+    S.boxes = s.boxes;
+    paintCanvas.getContext("2d").putImageData(s.paintImg, 0, 0);
+    drawBoxes();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Submit / accept / skip / unlabel / reset
+  // ═══════════════════════════════════════════════════════════════════════
+  async function onAccept() {
+    if (!S.frameId) return;
+    if (!S.hasProposal) {
+      ForzaTek.toast("No proposal to accept — paint something and Save instead.", "warn");
+      return;
+    }
+    const ok = await eel.label_accept(S.frameId)();
+    if (ok) await loadNextFrame();
+  }
+
+  async function onSave() {
+    if (!S.frameId) return;
+    const segB64 = encodePaintMask();
+    const ok = await eel.label_submit(S.frameId, segB64, S.boxes)();
+    if (ok) await loadNextFrame();
+  }
+
+  function onReset() {
+    if (!S.frameId) return;
+    pushUndo();
+    S.paintMask = new Uint8Array(S.width * S.height).fill(255);
+    S.boxes = [];
+    clearOverlay(segCanvas);
+    clearOverlay(paintCanvas);
+    clearOverlay(boxCanvas);
+    S.hasProposal = false;
+  }
+
+  async function onUnlabel() {
+    if (!S.frameId) return;
+    if (!confirm("Remove all labels for this frame?")) return;
+    const ok = await eel.label_unlabel(S.frameId)();
+    if (ok) await loadNextFrame();
+  }
+
+  async function onSkip() {
+    if (!S.frameId) return;
+    const ok = await eel.label_skip(S.frameId)();
+    if (ok) await loadNextFrame();
+  }
+
+  function encodePaintMask() {
+    const tmp = document.createElement("canvas");
+    tmp.width = S.width; tmp.height = S.height;
+    const tctx = tmp.getContext("2d");
+    const data = tctx.createImageData(S.width, S.height);
+    for (let i = 0; i < S.paintMask.length; i++) {
+      const cid = S.paintMask[i];
+      if (cid === 255) {
+        data.data[i*4 + 3] = 0;
+      } else {
+        data.data[i*4]     = cid;
+        data.data[i*4 + 1] = cid;
+        data.data[i*4 + 2] = cid;
+        data.data[i*4 + 3] = 255;
+      }
+    }
+    tctx.putImageData(data, 0, 0);
+    return tmp.toDataURL("image/png").split(",")[1];
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Hotkeys
+  // ═══════════════════════════════════════════════════════════════════════
+  function bindHotkeys() {
+    document.addEventListener("keydown", (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+      const k = e.key.toLowerCase();
+      if (k === "a") { e.preventDefault(); onAccept(); }
+      else if (e.code === "Space") { e.preventDefault(); onSave(); }
+      else if (k === "r") onReset();
+      else if (k === "u") onUnlabel();
+      else if (k === "n") onSkip();
+      else if (k === "b") setTool("paint");
+      else if (k === "v") setTool("box");
+      else if (k === "z" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); }
+      else if (k === "y" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); redo(); }
+      else if (k === "[") {
+        S.brushSize = Math.max(2, S.brushSize - 2);
+        $("brushSize").value = S.brushSize;
+        $("brushSizeLabel").textContent = S.brushSize + "px";
+      }
+      else if (k === "]") {
+        S.brushSize = Math.min(80, S.brushSize + 2);
+        $("brushSize").value = S.brushSize;
+        $("brushSizeLabel").textContent = S.brushSize + "px";
+      }
+      else if (["1", "2", "3", "4"].includes(k)) {
+        // 1=road (auto-labeled by default), 2=offroad, 3=curb, 4=wall
+        const idMap = {1: 1, 2: 0, 3: 2, 4: 3};
+        setClass(idMap[parseInt(k)]);
+      }
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Auto-labeler controls
+  // ═══════════════════════════════════════════════════════════════════════
+  function bindAutoLabeler() {
+    $("autoStartBtn").addEventListener("click", async () => {
+      const conf      = parseFloat($("confThreshold").value);
+      const decisive  = parseFloat($("decisiveThreshold").value);
+      const batch     = parseInt($("batchSize").value);
+      const r = await eel.auto_label_start(conf, 0.5, batch, decisive, false)();
+      if (r && r.error) ForzaTek.toast("Auto-labeler: " + r.error, "danger");
+    });
+    $("autoCancelBtn").addEventListener("click", async () => {
+      await eel.auto_label_cancel()();
+    });
+    $("rerunQueueBtn").addEventListener("click", async () => {
+      if (!confirm("Re-process every queued frame against current thresholds? Frames may auto-trust or stay queued.")) return;
+      const conf      = parseFloat($("confThreshold").value);
+      const decisive  = parseFloat($("decisiveThreshold").value);
+      const batch     = parseInt($("batchSize").value);
+      const r = await eel.auto_label_start(conf, 0.5, batch, decisive, true)();
+      if (r && r.error) ForzaTek.toast("Re-run queue: " + r.error, "danger");
+    });
+  }
+
+  async function refreshAutoStatus() {
+    const s = await eel.auto_label_status()();
+    if (!s) return;
+    const pill = $("autoStatusPill");
+    if (s.running) {
+      pill.textContent = "running";
+      pill.className = "pill ok";
+    } else if (s.error) {
+      pill.textContent = "error";
+      pill.className = "pill bad";
+    } else {
+      pill.textContent = "idle";
+      pill.className = "pill";
+    }
+    $("autoProcessed").textContent = `${s.processed || 0} / ${s.total || 0}`;
+    $("autoTrusted").textContent   = s.auto_trusted || 0;
+    $("autoQueued").textContent    = s.queued || 0;
+    $("autoFailed").textContent    = s.failed || 0;
+    $("autoFps").textContent       = (s.frames_per_sec ?? 0).toFixed(1) + " fps";
+
+    // Disable/enable buttons by run state.
+    $("autoStartBtn").disabled  =  s.running;
+    $("autoCancelBtn").disabled = !s.running;
+    $("rerunQueueBtn").disabled =  s.running;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Live preview
+  // ═══════════════════════════════════════════════════════════════════════
+  let _lastPreviewFrameId = -1;
+  async function refreshPreview() {
+    const p = await eel.auto_label_preview()();
+    if (!p || !p.frame_id) return;
+
+    const dpill = $("prevDecisionPill");
+    if (p.decision === "trusted") {
+      dpill.textContent = "trusted";
+      dpill.className = "pill ok";
+    } else if (p.decision === "queued") {
+      dpill.textContent = "queued";
+      dpill.className = "pill warn";
+    } else {
+      dpill.textContent = "—";
+      dpill.className = "pill";
+    }
+
+    $("prevFrameId").textContent     = `#${p.frame_id}`;
+    $("prevPctRoad").textContent     = ((p.pct_road     || 0) * 100).toFixed(1) + "%";
+    $("prevPctDecisive").textContent = ((p.pct_decisive || 0) * 100).toFixed(1) + "%";
+    $("prevMinConf").textContent     = (p.min_conf || 0).toFixed(2);
+
+    if (p.frame_id !== _lastPreviewFrameId) {
+      _lastPreviewFrameId = p.frame_id;
+      $("previewFrame").src =
+        `http://127.0.0.1:8001/api/label/frame/${p.frame_id}?mask=0&t=${Date.now()}`;
+    }
+
+    if (p.seg_b64) colorizeMaskTo($("previewSeg"), p.seg_b64);
+
+    const bcvs = $("previewBoxes");
+    const wrapEl = $("previewWrap");
+    bcvs.width  = wrapEl.clientWidth;
+    bcvs.height = wrapEl.clientHeight;
+    const bctx = bcvs.getContext("2d");
+    bctx.clearRect(0, 0, bcvs.width, bcvs.height);
+    bctx.lineWidth = 2;
+    bctx.font = "10px 'JetBrains Mono', monospace";
+    for (const b of (p.boxes || [])) {
+      const px = (b.x - b.w/2) * bcvs.width;
+      const py = (b.y - b.h/2) * bcvs.height;
+      const pw = b.w * bcvs.width;
+      const ph = b.h * bcvs.height;
+      bctx.strokeStyle = b.cls === "vehicle" ? "#ff8c40" : "#ff4040";
+      bctx.strokeRect(px, py, pw, ph);
+      bctx.fillStyle = bctx.strokeStyle;
+      bctx.fillText(`${b.cls} ${(b.confidence ?? 1).toFixed(2)}`, px + 2, py - 2);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Progress + queue
+  // ═══════════════════════════════════════════════════════════════════════
+  async function refreshProgress() {
+    const p = await eel.label_progress()();
+    if (!p || p.error) return;
+    $("progTotal").textContent     = p.total || 0;
+    $("progUnlabeled").textContent = p.unlabeled || 0;
+    $("progQueued").textContent    = p.queued || 0;
+    $("progLabeled").textContent   = p.labeled || 0;
+    $("progSkipped").textContent   = p.skipped || 0;
+    $("queuePill").textContent     = `queue ${p.queued || 0}`;
+    $("progressPill").textContent  = `${p.labeled || 0} / ${p.total || 0}`;
+
+    const q = await eel.label_queue(20)();
+    const list = $("queueList");
+    list.innerHTML = "";
+    for (const item of (q || [])) {
+      const div = document.createElement("div");
+      div.className = "item";
+      div.innerHTML = `
+        <span style="color: var(--ink-dim);">#${item.frame_id} · ${item.game_version || "?"}</span>
+        <span class="v" style="color: var(--warn);">${(item.uncertainty || 0).toFixed(2)}</span>`;
+      list.appendChild(div);
+    }
+  }
+});
+</script>
+</body>
+</html>

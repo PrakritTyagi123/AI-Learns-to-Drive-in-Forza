@@ -57,6 +57,10 @@ from backend.ingest import routes  as ingest_routes
 from backend.hud_mask import eel_api as hud_mask_eel_api
 from backend.hud_mask import routes  as hud_mask_routes
 
+# Module 4 - Labeling
+from backend.labeling import eel_api as labeling_eel_api
+from backend.labeling import routes  as labeling_routes
+
 # ─── Logging ───────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -132,6 +136,9 @@ def _build_fastapi_app() -> FastAPI:
     # Module 3 — HUD Mask routes (SSE stream)
     hud_mask_routes.register_routes(app)
 
+    # Module 4 — Labeling routes (SSE stream)
+    labeling_routes.register_routes(app)
+
     return app
 
 
@@ -183,6 +190,8 @@ def _register_all_eel_apis() -> None:
     # Module 3 — HUD Mask
     hud_mask_eel_api.register_eel(eel)
 
+    # Module 4 — Labeling
+    labeling_eel_api.register_eel(eel)
 
 # ─── Boot ──────────────────────────────────────────────────────────────────
 def main() -> int:
