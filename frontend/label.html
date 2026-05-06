@@ -13,7 +13,7 @@
     /* ─── Page layout ───────────────────────────────────────────────────── */
     .label-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 320px;
+      grid-template-columns: minmax(0, 1fr) 340px;
       gap: 14px;
       align-items: start;
     }
@@ -105,7 +105,7 @@
       border: 1px solid var(--edge);
       border-radius: var(--radius-lg);
       overflow: hidden;
-      aspect-ratio: 16 / 9;     /* ← always 16:9 */
+      aspect-ratio: 16 / 9;
       width: 100%;
       display: flex;
       align-items: center;
@@ -172,6 +172,7 @@
       padding: 4px 0;
       font-size: 12px;
       color: var(--ink-dim);
+      gap: 8px;
     }
     .row .v {
       font-family: var(--font-mono);
@@ -189,6 +190,7 @@
       font-size: 12px;
       text-align: right;
     }
+    .row input[type="checkbox"] { accent-color: var(--accent); }
 
     /* ─── Class picker ──────────────────────────────────────────────────── */
     .class-picker { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -237,22 +239,57 @@
     /* ─── Live preview mini-canvas ──────────────────────────────────────── */
     .preview-canvas-wrap {
       position: relative;
-      background: #000;
+      background: #0a0c10;
       border: 1px solid var(--edge);
       border-radius: var(--radius);
       overflow: hidden;
       aspect-ratio: 16 / 9;
       width: 100%;
     }
-    .preview-canvas-wrap img,
-    .preview-canvas-wrap canvas {
+    .preview-canvas-wrap > * {
       position: absolute;
       top: 0; left: 0;
       width: 100%;
       height: 100%;
       display: block;
+      object-fit: contain;
     }
-    .preview-canvas-wrap #previewSeg { opacity: 0.40; mix-blend-mode: screen; }
+    .preview-canvas-wrap #previewFrame { z-index: 1; }
+    .preview-canvas-wrap #previewSeg   { z-index: 2; opacity: 0.45;
+                                          mix-blend-mode: screen;
+                                          pointer-events: none; }
+    .preview-canvas-wrap #previewBoxes { z-index: 3; pointer-events: none; }
+    .preview-empty {
+      position: absolute; inset: 0; z-index: 10;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--ink-faint);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      text-align: center;
+      padding: 0 12px;
+      pointer-events: none;
+    }
+
+    /* ─── Per-class breakdown stack ─────────────────────────────────────── */
+    .class-bars { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+    .class-bar {
+      display: grid;
+      grid-template-columns: 60px 1fr 50px;
+      gap: 8px;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+    .class-bar .label { color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.10em; }
+    .class-bar .track {
+      background: var(--surface-3);
+      border: 1px solid var(--edge);
+      border-radius: 2px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .class-bar .fill { height: 100%; }
+    .class-bar .pct { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
 
     /* ─── Queue list ────────────────────────────────────────────────────── */
     .queue-list {
@@ -367,42 +404,49 @@
     <!-- ═══════════════════════════ Side column ═══════════════════════════ -->
     <div style="display: flex; flex-direction: column; gap: 12px;">
 
-      <!-- Auto-labeler controls -->
+      <!-- Auto-labeler controls (4-class mode) -->
       <div class="panel">
         <div class="panel-header">
-          <span>Auto-labeler</span>
+          <span>Auto-labeler · 4-class</span>
           <span class="pill" id="autoStatusPill">idle</span>
         </div>
         <div class="row"><span>Processed</span><span class="v" id="autoProcessed">0 / 0</span></div>
-        <div class="row"><span>Trusted</span><span class="v" id="autoTrusted">0</span></div>
-        <div class="row"><span>Queued</span><span class="v" id="autoQueued">0</span></div>
-        <div class="row"><span>Failed</span><span class="v" id="autoFailed">0</span></div>
-        <div class="row"><span>Speed</span><span class="v" id="autoFps">— fps</span></div>
+        <div class="row"><span>Trusted</span>  <span class="v" id="autoTrusted">0</span></div>
+        <div class="row"><span>Queued</span>   <span class="v" id="autoQueued">0</span></div>
+        <div class="row"><span>Failed</span>   <span class="v" id="autoFailed">0</span></div>
+        <div class="row"><span>Speed</span>    <span class="v" id="autoFps">— fps</span></div>
 
         <div style="height: 8px;"></div>
 
-        <div class="row" title="YOLO min box confidence">
-          <span>Conf threshold</span>
-          <input id="confThreshold" type="number" step="0.05" min="0" max="1" value="0.85" />
+        <div class="row" title="YOLO min box confidence to auto-trust the detection part of a frame.">
+          <span>YOLO conf ≥</span>
+          <input id="confThreshold" type="number" step="0.05" min="0" max="1" value="0.70" />
         </div>
-        <div class="row" title="% pixels SegFormer must be decisive about">
-          <span>Decisive %</span>
-          <input id="decisiveThreshold" type="number" step="0.05" min="0" max="1" value="0.85" />
+        <div class="row" title="Min fraction of pixels with a real (0..3) class to auto-trust the seg part of a frame. Lower = more frames auto-trusted but possibly noisier.">
+          <span>Min coverage</span>
+          <input id="minCoverage" type="number" step="0.05" min="0" max="1" value="0.30" />
+        </div>
+        <div class="row" title="Per-pixel softmax probability gate inside SegFormer. Read from settings.json (key: seg_pixel_confidence_threshold). Edit settings.json + restart to change.">
+          <span>Pixel conf ≥</span>
+          <span class="v" id="pixelConfReadout">—</span>
         </div>
         <div class="row">
           <span>Batch size</span>
           <input id="batchSize" type="number" step="1" min="1" max="32" value="16" />
+        </div>
+        <div class="row" title="Also re-process frames that are already in the queue.">
+          <span>Include queue</span>
+          <input id="includeQueued" type="checkbox" />
+        </div>
+        <div class="row" title="DELETE all auto_trusted labels and reset their frames before starting. Manual labels are preserved.">
+          <span style="color: var(--warn);">Wipe existing</span>
+          <input id="wipeExisting" type="checkbox" />
         </div>
 
         <div style="display: flex; gap: 6px; margin-top: 10px;">
           <button class="btn btn-primary" id="autoStartBtn" style="flex:1">Start</button>
           <button class="btn btn-danger"  id="autoCancelBtn" style="flex:1">Cancel</button>
         </div>
-
-        <button class="btn" id="rerunQueueBtn" style="width:100%; margin-top: 6px;"
-                title="Re-process queued frames against current thresholds. Some may now auto-trust.">
-          Re-run queue (current settings)
-        </button>
       </div>
 
       <!-- Live preview -->
@@ -412,14 +456,16 @@
           <span class="pill" id="prevDecisionPill">—</span>
         </div>
         <div class="preview-canvas-wrap" id="previewWrap">
-          <img id="previewFrame" alt="" />
+          <div class="preview-empty" id="previewEmpty">waiting for the first processed frame…</div>
+          <img id="previewFrame" alt="" style="display: none;" />
           <canvas id="previewSeg"></canvas>
           <canvas id="previewBoxes"></canvas>
         </div>
-        <div class="row" style="margin-top: 8px;"><span>Frame</span><span class="v" id="prevFrameId">—</span></div>
-        <div class="row"><span>% road</span><span class="v" id="prevPctRoad">—</span></div>
-        <div class="row"><span>% decisive</span><span class="v" id="prevPctDecisive">—</span></div>
-        <div class="row"><span>YOLO min conf</span><span class="v" id="prevMinConf">—</span></div>
+        <div class="row" style="margin-top: 8px;"><span>Frame</span>      <span class="v" id="prevFrameId">—</span></div>
+        <div class="row"><span>Coverage</span> <span class="v" id="prevPctReal">—</span></div>
+        <div class="row"><span>YOLO min conf</span> <span class="v" id="prevMinConf">—</span></div>
+        <div class="row"><span>Mean entropy</span>  <span class="v" id="prevEntropy">—</span></div>
+        <div class="class-bars" id="prevClassBars"></div>
       </div>
 
       <!-- Progress -->
@@ -462,15 +508,14 @@
 document.addEventListener("DOMContentLoaded", () => {
   ForzaTek.mount("label");
 
-  // ROAD-ONLY MODE: prelabeler emits a binary mask
-  //   id 1   = road (green, auto-labeled)
-  //   id 255 = unknown (transparent)
-  // 0/2/3 are kept for manual painting (offroad, curb, wall) only.
+  // 4-CLASS MODE: ids match Module 5's perception/classes.py:
+  //   0 offroad   1 road   2 curb   3 wall    255 ignore (transparent)
+  // Hotkeys 1..4 map in dataset-natural order: 1=offroad, 2=road, 3=curb, 4=wall.
   const SEG_CLASSES = [
-    { id: 1, name: "road",    color: [80, 220, 130] },
-    { id: 0, name: "offroad", color: [220, 140, 40] },
-    { id: 2, name: "curb",    color: [80, 200, 240] },
-    { id: 3, name: "wall",    color: [220, 80, 220] },
+    { id: 0, name: "offroad", color: [220, 140, 40]  },
+    { id: 1, name: "road",    color: [80,  220, 130] },
+    { id: 2, name: "curb",    color: [80,  200, 240] },
+    { id: 3, name: "wall",    color: [220, 80,  220] },
   ];
   const SEG_BY_ID = {};
   for (const c of SEG_CLASSES) SEG_BY_ID[c.id] = c;
@@ -482,7 +527,7 @@ document.addEventListener("DOMContentLoaded", () => {
     gameVersion: null,
     uncertainty: null,
     tool: "paint",
-    classId: 1,
+    classId: 1,           // default: road
     brushSize: 14,
     detClass: "vehicle",
     paintMask: null,
@@ -498,7 +543,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const segCanvas   = $("segCanvas");
   const paintCanvas = $("paintCanvas");
   const boxCanvas   = $("boxCanvas");
-  const wrap        = $("canvasWrap");
   const empty       = $("canvasEmpty");
 
   buildClassPicker();
@@ -510,9 +554,9 @@ document.addEventListener("DOMContentLoaded", () => {
   refreshProgress();
   refreshAutoStatus();
   loadNextFrame();
-  setInterval(refreshProgress,    5000);
-  setInterval(refreshAutoStatus,  2000);
-  setInterval(refreshPreview,      500);
+  setInterval(refreshProgress,   5000);
+  setInterval(refreshAutoStatus, 2000);
+  setInterval(refreshPreview,     500);
 
   // ═══════════════════════════════════════════════════════════════════════
   // Class picker + tool buttons
@@ -582,8 +626,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     empty.style.display = "none";
 
-    // The canvases match the frame's aspect — we set their internal pixel
-    // size to the frame's actual resolution; the wrap (16:9) handles display.
     for (const c of [frameCanvas, segCanvas, paintCanvas, boxCanvas]) {
       c.width  = S.width;
       c.height = S.height;
@@ -620,7 +662,6 @@ document.addEventListener("DOMContentLoaded", () => {
     $("frameInfo").textContent =
       `frame #${S.frameId} · ${S.width}×${S.height} · ${S.gameVersion || "?"} · ${u}`;
 
-    // Decision pill
     if (next.from_queue) {
       $("frameDecisionPill").textContent = "queued";
       $("frameDecisionPill").className = "pill warn";
@@ -635,7 +676,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Seg proposal overlay (also used by live preview panel)
+  // Seg overlay colorizer — used by both main canvas and live preview.
+  // Resizes the destination canvas to match the mask's actual pixel dims so
+  // CSS scaling never fights putImageData() (which requires raw pixel match).
   // ═══════════════════════════════════════════════════════════════════════
   function colorizeMaskTo(canvasEl, maskB64) {
     const img = new Image();
@@ -656,6 +699,7 @@ document.addEventListener("DOMContentLoaded", () => {
           data.data[i+2] = c.color[2];
           data.data[i+3] = 255;
         } else {
+          // 255 (ignore) or any out-of-range id → fully transparent.
           data.data[i+3] = 0;
         }
       }
@@ -892,35 +936,41 @@ document.addEventListener("DOMContentLoaded", () => {
         $("brushSize").value = S.brushSize;
         $("brushSizeLabel").textContent = S.brushSize + "px";
       }
+      // 1=offroad, 2=road, 3=curb, 4=wall (matches the chip layout above).
       else if (["1", "2", "3", "4"].includes(k)) {
-        // 1=road (auto-labeled by default), 2=offroad, 3=curb, 4=wall
-        const idMap = {1: 1, 2: 0, 3: 2, 4: 3};
-        setClass(idMap[parseInt(k)]);
+        const idMap = { "1": 0, "2": 1, "3": 2, "4": 3 };
+        setClass(idMap[k]);
       }
     });
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Auto-labeler controls
+  // Auto-labeler controls (4-class API)
   // ═══════════════════════════════════════════════════════════════════════
   function bindAutoLabeler() {
     $("autoStartBtn").addEventListener("click", async () => {
-      const conf      = parseFloat($("confThreshold").value);
-      const decisive  = parseFloat($("decisiveThreshold").value);
-      const batch     = parseInt($("batchSize").value);
-      const r = await eel.auto_label_start(conf, 0.5, batch, decisive, false)();
+      const conf          = parseFloat($("confThreshold").value);
+      const minCoverage   = parseFloat($("minCoverage").value);
+      const batch         = parseInt  ($("batchSize").value);
+      const includeQueued = !!$("includeQueued").checked;
+      const wipeExisting  = !!$("wipeExisting").checked;
+
+      if (wipeExisting) {
+        if (!confirm("Wipe all auto-trusted labels? Manual labels are preserved.\n\nThis cannot be undone.")) {
+          return;
+        }
+      }
+
+      // 4-class API order:
+      //   start(confidence_threshold, min_class_coverage, batch_size,
+      //         include_queued, wipe_existing)
+      const r = await eel.auto_label_start(
+        conf, minCoverage, batch, includeQueued, wipeExisting,
+      )();
       if (r && r.error) ForzaTek.toast("Auto-labeler: " + r.error, "danger");
     });
     $("autoCancelBtn").addEventListener("click", async () => {
       await eel.auto_label_cancel()();
-    });
-    $("rerunQueueBtn").addEventListener("click", async () => {
-      if (!confirm("Re-process every queued frame against current thresholds? Frames may auto-trust or stay queued.")) return;
-      const conf      = parseFloat($("confThreshold").value);
-      const decisive  = parseFloat($("decisiveThreshold").value);
-      const batch     = parseInt($("batchSize").value);
-      const r = await eel.auto_label_start(conf, 0.5, batch, decisive, true)();
-      if (r && r.error) ForzaTek.toast("Re-run queue: " + r.error, "danger");
     });
   }
 
@@ -944,19 +994,59 @@ document.addEventListener("DOMContentLoaded", () => {
     $("autoFailed").textContent    = s.failed || 0;
     $("autoFps").textContent       = (s.frames_per_sec ?? 0).toFixed(1) + " fps";
 
-    // Disable/enable buttons by run state.
+    // Live readback of the per-pixel threshold from settings.json.
+    const px = s.pixel_confidence_thr;
+    if (typeof px === "number" && Number.isFinite(px)) {
+      $("pixelConfReadout").textContent = px.toFixed(2);
+    }
+
     $("autoStartBtn").disabled  =  s.running;
     $("autoCancelBtn").disabled = !s.running;
-    $("rerunQueueBtn").disabled =  s.running;
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Live preview
+  // Live preview — uses get_preview() which returns the most recent frame
+  // the worker processed. The preview canvas is always visible (fixed 16:9
+  // aspect ratio) — empty state shows a "waiting…" message until data arrives.
   // ═══════════════════════════════════════════════════════════════════════
   let _lastPreviewFrameId = -1;
+  let _previewLogged = false;
   async function refreshPreview() {
-    const p = await eel.auto_label_preview()();
-    if (!p || !p.frame_id) return;
+    let p = null;
+    try {
+      p = await eel.auto_label_preview()();
+    } catch (e) {
+      if (!_previewLogged) {
+        console.warn("[label] auto_label_preview() not available — is the eel api wired? error:", e);
+        _previewLogged = true;
+      }
+      return;
+    }
+    if (!p) {
+      if (!_previewLogged) {
+        console.log("[label] auto_label_preview returned null — labeler hasn't processed any frame yet");
+        _previewLogged = true;
+      }
+      return;
+    }
+    if (!p.frame_id) {
+      // Got a response but the worker hasn't seeded a preview yet. Show
+      // empty-state so we can tell at a glance whether the call works.
+      if (!_previewLogged) {
+        console.log("[label] auto_label_preview returned (no frame yet):", p);
+        _previewLogged = true;
+      }
+      return;
+    }
+    if (!_previewLogged) {
+      console.log("[label] first preview payload:", p);
+      _previewLogged = true;
+    }
+
+    // Hide the empty-state placeholder; reveal the img with explicit display:block
+    // (img defaults to inline, which interacts oddly with absolute positioning).
+    $("previewEmpty").style.display = "none";
+    $("previewFrame").style.display = "block";
 
     const dpill = $("prevDecisionPill");
     if (p.decision === "trusted") {
@@ -970,11 +1060,28 @@ document.addEventListener("DOMContentLoaded", () => {
       dpill.className = "pill";
     }
 
-    $("prevFrameId").textContent     = `#${p.frame_id}`;
-    $("prevPctRoad").textContent     = ((p.pct_road     || 0) * 100).toFixed(1) + "%";
-    $("prevPctDecisive").textContent = ((p.pct_decisive || 0) * 100).toFixed(1) + "%";
-    $("prevMinConf").textContent     = (p.min_conf || 0).toFixed(2);
+    $("prevFrameId").textContent  = `#${p.frame_id}`;
+    $("prevPctReal").textContent  = ((p.pct_real || 0) * 100).toFixed(1) + "%";
+    $("prevMinConf").textContent  = (p.min_conf || 0).toFixed(2);
+    $("prevEntropy").textContent  = (p.seg_entropy || 0).toFixed(2);
 
+    // Per-class breakdown bars (4-class).
+    const bars = $("prevClassBars");
+    bars.innerHTML = "";
+    const pcc = p.pct_per_class || {};
+    for (const c of SEG_CLASSES) {
+      const pct = (pcc[c.name] || 0) * 100;
+      const row = document.createElement("div");
+      row.className = "class-bar";
+      row.innerHTML = `
+        <span class="label">${c.name}</span>
+        <div class="track"><div class="fill"
+             style="width: ${pct.toFixed(1)}%; background: rgb(${c.color.join(",")});"></div></div>
+        <span class="pct">${pct.toFixed(1)}%</span>`;
+      bars.appendChild(row);
+    }
+
+    // Reload frame image only when the frame_id changes.
     if (p.frame_id !== _lastPreviewFrameId) {
       _lastPreviewFrameId = p.frame_id;
       $("previewFrame").src =
@@ -983,10 +1090,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (p.seg_b64) colorizeMaskTo($("previewSeg"), p.seg_b64);
 
+    // Boxes: redraw on the preview canvas. Use the wrap's CSS pixel size so
+    // the box coords (normalized) project correctly even at small sizes.
     const bcvs = $("previewBoxes");
     const wrapEl = $("previewWrap");
-    bcvs.width  = wrapEl.clientWidth;
-    bcvs.height = wrapEl.clientHeight;
+    if (wrapEl.clientWidth > 0 && wrapEl.clientHeight > 0) {
+      bcvs.width  = wrapEl.clientWidth;
+      bcvs.height = wrapEl.clientHeight;
+    }
     const bctx = bcvs.getContext("2d");
     bctx.clearRect(0, 0, bcvs.width, bcvs.height);
     bctx.lineWidth = 2;

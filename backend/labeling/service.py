@@ -617,3 +617,61 @@ def get_frame_for_inference(frame_id: int) -> Optional[dict]:
         "jpeg_bytes":   bytes(row["frame_jpeg"]),
         "game_version": row["game_version"],
     }
+
+def wipe_auto_trusted() -> int:
+    """Delete all labels with provenance='auto_trusted' and reset their
+    frames to label_status='unlabeled'. Manual labels are preserved.
+ 
+    Returns the number of labels deleted.
+ 
+    Use with care — this discards prior auto-labeling work. Intended for
+    rebuilding the dataset after changing gating parameters.
+    """
+    with database.write_conn() as conn:
+        # Find frames whose ONLY labels are auto_trusted. Frames with any
+        # manual label are left alone (their auto_trusted labels are still
+        # deleted, but the frame keeps its 'labeled' status because of the
+        # manual label).
+        rows = conn.execute(
+            """SELECT DISTINCT frame_id
+               FROM labels
+               WHERE provenance = 'auto_trusted'"""
+        ).fetchall()
+        affected_frame_ids = [int(r["frame_id"]) for r in rows]
+ 
+        # Delete all auto_trusted labels.
+        cur = conn.execute(
+            "DELETE FROM labels WHERE provenance = 'auto_trusted'"
+        )
+        n_deleted = cur.rowcount
+ 
+        # For each affected frame, recompute label_status. If it has no
+        # remaining labels at all, reset to 'unlabeled'. If it still has
+        # labels (manual ones), leave it as 'labeled'.
+        for fid in affected_frame_ids:
+            remaining = conn.execute(
+                "SELECT COUNT(*) AS n FROM labels WHERE frame_id = ?", (fid,),
+            ).fetchone()
+            if (remaining["n"] or 0) == 0:
+                conn.execute(
+                    "UPDATE frames SET label_status = 'unlabeled' WHERE id = ?",
+                    (fid,),
+                )
+ 
+        # Also clear any active_queue entries for affected frames — they
+        # were queued under the old gating rules and shouldn't carry over.
+        if affected_frame_ids:
+            placeholders = ",".join("?" * len(affected_frame_ids))
+            conn.execute(
+                f"DELETE FROM active_queue WHERE frame_id IN ({placeholders})",
+                affected_frame_ids,
+            )
+ 
+        # Clear any old proposals so the new run starts clean.
+        if affected_frame_ids:
+            conn.execute(
+                f"DELETE FROM proposals WHERE frame_id IN ({placeholders})",
+                affected_frame_ids,
+            )
+ 
+    return int(n_deleted)

@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Train · ForzaTek v2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css" />
+  <script type="text/javascript" src="/eel.js"></script>
+  <script src="app.js"></script>
+  <!-- Chart.js (UMD build). jsDelivr primary; cdnjs fallback if jsDelivr is blocked. -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js"
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+    /* If jsDelivr was blocked, load Chart.js from cdnjs synchronously so the
+       rest of this page can assume window.Chart is defined by start(). */
+    if (typeof window.Chart === "undefined") {
+      document.write(
+        '<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"' +
+        ' crossorigin="anonymous" referrerpolicy="no-referrer"><\/script>'
+      );
+    }
+  </script>
+  <style>
+    .train-grid {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+    }
+    @media (max-width: 1100px) {
+      .train-grid { grid-template-columns: 1fr; }
+    }
+
+    .kv-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 5px 0;
+      gap: 10px;
+      border-bottom: 1px dashed transparent;
+    }
+    .kv-row + .kv-row { border-top: 1px dashed var(--edge); }
+    .kv-row .k {
+      color: var(--ink-faint);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    .kv-row .v {
+      color: var(--ink);
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      text-align: right;
+      word-break: break-all;
+    }
+    .kv-row .v.ok   { color: var(--ok); }
+    .kv-row .v.warn { color: var(--warn); }
+    .kv-row .v.bad  { color: var(--danger); }
+
+    .verdict {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      font-size: 12px;
+      color: var(--ink-dim);
+      line-height: 1.5;
+    }
+    .verdict.ok   { color: var(--ok);     border-color: var(--ok);     background: var(--ok-bg); }
+    .verdict.warn { color: var(--warn);   border-color: var(--warn);   background: var(--warn-bg); }
+    .verdict.bad  { color: var(--danger); border-color: var(--danger); background: var(--danger-bg); }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .actions .spacer { flex: 1; }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-dim);
+      margin-bottom: 6px;
+    }
+    .progress-track {
+      background: var(--surface-2);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      height: 10px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      background: var(--accent);
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    /* Coverage / class collapse warning banner */
+    .warn-banner {
+      margin-top: 10px;
+      padding: 8px 12px;
+      border: 1px solid var(--warn);
+      background: var(--warn-bg);
+      color: var(--warn);
+      border-radius: var(--radius);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.5;
+      display: none;
+    }
+    .warn-banner.bad {
+      border-color: var(--danger);
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
+
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .metric-tile {
+      background: var(--surface-2);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      padding: 9px 11px;
+    }
+    .metric-tile .k {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .metric-tile .v {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--ink);
+      margin-top: 3px;
+    }
+    .metric-tile .sub {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--ink-faint);
+      margin-top: 2px;
+    }
+    .metric-tile.warn { border-color: var(--warn); }
+    .metric-tile.bad  { border-color: var(--danger); }
+
+    /* Per-class IoU mini-strip — sits below the four headline tiles. */
+    .class-iou-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .class-iou-tile {
+      background: var(--surface-2);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      padding: 7px 9px;
+      font-family: var(--font-mono);
+    }
+    .class-iou-tile .k {
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .class-iou-tile .swatch {
+      width: 8px; height: 8px;
+      border-radius: 2px;
+      border: 1px solid rgba(255,255,255,0.3);
+    }
+    .class-iou-tile .v {
+      font-variant-numeric: tabular-nums;
+      font-size: 14px;
+      color: var(--ink);
+      margin-top: 2px;
+    }
+    .class-iou-tile .cov {
+      font-size: 9px;
+      color: var(--ink-faint);
+      margin-top: 1px;
+    }
+
+    .tab-strip {
+      display: flex;
+      gap: 0;
+      margin-top: 14px;
+      border-bottom: 1px solid var(--edge);
+    }
+    .tab-strip .tab {
+      background: transparent;
+      border: 1px solid transparent;
+      border-bottom: none;
+      color: var(--ink-faint);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 8px 16px;
+      cursor: pointer;
+      margin-bottom: -1px;
+      border-radius: var(--radius) var(--radius) 0 0;
+      transition: color 0.12s ease;
+    }
+    .tab-strip .tab:hover { color: var(--ink-dim); }
+    .tab-strip .tab.active {
+      color: var(--ink);
+      background: var(--surface-2);
+      border-color: var(--edge);
+      border-bottom-color: var(--surface-2);
+    }
+
+    .tab-pane {
+      display: none;
+      background: var(--surface-2);
+      border: 1px solid var(--edge);
+      border-radius: 0 var(--radius) var(--radius) var(--radius);
+      padding: 14px;
+    }
+    .tab-pane.active { display: block; }
+
+    .chart-wrap {
+      position: relative;
+      width: 100%;
+      height: 300px;
+    }
+    .chart-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--ink-faint);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      pointer-events: none;
+    }
+
+    .log-box {
+      background: #0a0c10;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-dim);
+      height: 220px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+    .log-box .line { padding: 1px 0; }
+    .log-box .line.warn  { color: var(--warn); }
+    .log-box .line.error { color: var(--danger); }
+    .log-box .line.ok    { color: var(--ok); }
+
+    /* ─── Checkpoint list (4-class breakdown) ─────────────────────────── */
+    .ckpt-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ckpt-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px;
+      background: var(--surface-2);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      font-size: 12px;
+    }
+    .ckpt-row.active {
+      border-color: var(--accent);
+      background: var(--accent-bg);
+    }
+    .ckpt-row .top-line {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .ckpt-row .name {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--ink);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ckpt-row .meta {
+      color: var(--ink-faint);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      margin-top: 2px;
+    }
+    .ckpt-row .ckpt-classes {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 6px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--edge);
+    }
+    .ckpt-row .ckpt-classes .cell {
+      font-family: var(--font-mono);
+      text-align: center;
+    }
+    .ckpt-row .ckpt-classes .label {
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .ckpt-row .ckpt-classes .swatch {
+      width: 7px; height: 7px;
+      border-radius: 2px;
+      border: 1px solid rgba(255,255,255,0.3);
+    }
+    .ckpt-row .ckpt-classes .val {
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      color: var(--ink);
+      margin-top: 3px;
+    }
+    .ckpt-row .ckpt-classes .val.warn { color: var(--warn); }
+    .ckpt-row .ckpt-classes .val.bad  { color: var(--danger); }
+    .ckpt-row .ckpt-warn {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 5px 8px;
+      border: 1px solid var(--warn);
+      background: var(--warn-bg);
+      color: var(--warn);
+      border-radius: var(--radius);
+    }
+    .ckpt-row .ckpt-warn.bad {
+      border-color: var(--danger);
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
+
+    .empty-block {
+      padding: 24px 16px;
+      text-align: center;
+      color: var(--ink-faint);
+      border: 1px dashed var(--edge);
+      border-radius: var(--radius);
+      background: var(--surface);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body class="with-sidebar">
+
+  <main class="page" id="pageRoot">
+
+    <header class="page-header">
+      <div>
+        <div class="crumb">Module 5 · Model</div>
+        <h1>Train</h1>
+      </div>
+      <div class="pills">
+        <span class="pill nums" id="archPill">arch —</span>
+        <span class="pill nums" id="devicePill">device —</span>
+        <span class="pill nums" id="statusPill">idle</span>
+        <span class="pill nums" id="updatedPill">—</span>
+      </div>
+    </header>
+
+    <div class="train-grid">
+
+      <!-- ═══════════════════ LEFT RAIL ═══════════════════ -->
+      <div class="grid" style="gap: 12px;">
+
+        <section class="panel">
+          <div class="panel-header">Readiness</div>
+          <div class="kv-row"><span class="k">Labeled frames</span> <span class="v" id="rLabeled">—</span></div>
+          <div class="kv-row"><span class="k">With seg</span>       <span class="v" id="rSeg">—</span></div>
+          <div class="kv-row"><span class="k">With det</span>       <span class="v" id="rDet">—</span></div>
+          <div class="kv-row"><span class="k">By version</span>     <span class="v" id="rVersions">—</span></div>
+          <div class="kv-row"><span class="k">Active model</span>   <span class="v" id="rActive">none</span></div>
+          <div class="kv-row"><span class="k">GPU</span>             <span class="v" id="rGpu">checking…</span></div>
+          <div class="kv-row"><span class="k">Torch</span>           <span class="v" id="rTorch">—</span></div>
+          <div id="verdict" class="verdict">checking readiness…</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header" style="display:flex;justify-content:space-between;align-items:baseline;">
+            <span>Dataset cache</span>
+            <span class="pill nums" id="cachePill" style="font-size:9px;">—</span>
+          </div>
+          <div class="kv-row"><span class="k">Cached frames</span> <span class="v" id="cFrames">—</span></div>
+          <div class="kv-row"><span class="k">Size on disk</span>  <span class="v" id="cSize">—</span></div>
+          <div class="kv-row"><span class="k">Built</span>          <span class="v" id="cBuilt">—</span></div>
+          <div class="kv-row"><span class="k">Status</span>         <span class="v" id="cStatus">checking…</span></div>
+
+          <div id="cacheProgress" style="display:none;margin-top:10px;">
+            <div class="progress-meta">
+              <span id="cacheLabel">building…</span>
+              <span id="cacheCounts" class="muted nums">—</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="cacheFill"></div>
+            </div>
+          </div>
+
+          <div class="form-grid" style="margin-top:10px;">
+            <div class="field">
+              <label>Build workers</label>
+              <input id="cfgCacheWorkers" class="input nums" type="number"
+                     min="1" max="32" value="0"
+                     placeholder="auto"
+                     title="Decode worker processes. 0 = auto (CPU-2, capped at 8)." />
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="btnCacheBuild" class="btn btn-ok">Build cache</button>
+            <button id="btnCacheCancel" class="btn btn-bad" disabled>Cancel</button>
+            <span class="spacer"></span>
+            <button id="btnCacheClear" class="btn">Clear</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">Run configuration</div>
+          <div class="form-grid">
+            <div class="field full">
+              <label>Run name</label>
+              <input id="cfgName" class="input" type="text" value="perception_v1" />
+            </div>
+            <div class="field">
+              <label>Epochs</label>
+              <input id="cfgEpochs" class="input nums" type="number" min="1" max="500" value="30" />
+            </div>
+            <div class="field">
+              <label>Batch size</label>
+              <input id="cfgBatch" class="input nums" type="number" min="1" max="128" value="8" />
+            </div>
+            <div class="field">
+              <label>Learning rate</label>
+              <input id="cfgLR" class="input nums" type="number" step="0.00001" value="0.0003" />
+            </div>
+            <div class="field">
+              <label>Val fraction</label>
+              <input id="cfgVal" class="input nums" type="number" step="0.05" min="0.05" max="0.5" value="0.15" />
+            </div>
+            <div class="field">
+              <label>Seed</label>
+              <input id="cfgSeed" class="input nums" type="number" value="0" />
+            </div>
+            <div class="field">
+              <label>Device</label>
+              <select id="cfgDevice" class="select">
+                <option value="">auto (prefer GPU)</option>
+                <option value="cuda">force GPU (cuda)</option>
+                <option value="cpu">force CPU</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Workers</label>
+              <input id="cfgWorkers" class="input nums" type="number"
+                     min="0" max="32" value="12"
+                     title="Dataloader processes. Higher = faster on multi-core CPUs." />
+            </div>
+            <div class="field full">
+              <label>Resume from (optional)</label>
+              <select id="cfgResume" class="select">
+                <option value="">— start from ImageNet pretrained —</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="btnStart" class="btn btn-lg btn-ok">Start training</button>
+            <button id="btnCancel" class="btn btn-bad" disabled>Cancel</button>
+            <span class="spacer"></span>
+            <button id="btnPredict" class="btn"
+                    title="Run active learning on unlabeled frames using the active model.">
+              Active learn
+            </button>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- ═══════════════════ RIGHT COLUMN ═══════════════════ -->
+      <div class="grid" style="gap: 12px;">
+
+        <section class="panel">
+          <div class="panel-header">Live progress</div>
+          <div class="progress-meta">
+            <span id="progressLabel">no run yet</span>
+            <span id="progressThroughput" class="muted nums">—</span>
+            <span id="progressEta" class="muted">—</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+
+          <!-- Coverage / class-collapse warning banner. Hidden until trainer
+               flags it on a validation pass. -->
+          <div class="warn-banner" id="coverageBanner"></div>
+
+          <div class="metrics-row">
+            <div class="metric-tile">
+              <div class="k">train loss</div>
+              <div class="v nums" id="mTrainLoss">—</div>
+            </div>
+            <div class="metric-tile">
+              <div class="k">val loss</div>
+              <div class="v nums" id="mValLoss">—</div>
+            </div>
+            <div class="metric-tile">
+              <div class="k">mIoU</div>
+              <div class="v nums" id="mMIoU">—</div>
+            </div>
+            <div class="metric-tile" id="tileCoverage">
+              <div class="k">coverage</div>
+              <div class="v nums" id="mCoverage">—</div>
+              <div class="sub" id="mCoverageSub">val pixels labeled</div>
+            </div>
+          </div>
+
+          <!-- Per-class IoU breakdown. Always 4 tiles in fixed order. -->
+          <div class="class-iou-row" id="classIouRow"></div>
+
+          <div class="tab-strip" role="tablist">
+            <button class="tab active" data-tab="loss" role="tab">Loss</button>
+          </div>
+          <div class="tab-pane active" data-pane="loss">
+            <div class="chart-wrap">
+              <canvas id="chartLoss"></canvas>
+              <div class="chart-overlay" id="chartLossEmpty">awaiting first epoch…</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header" style="display: flex; justify-content: space-between; align-items: baseline;">
+            <span>Log tail</span>
+            <span class="muted nums" id="logCount" style="font-size: 10px;">0 lines</span>
+          </div>
+          <div class="log-box" id="logBox"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">Checkpoints</div>
+          <div id="ckptList" class="ckpt-list">
+            <div class="empty-block">No checkpoints yet — start a run to create one.</div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+
+  <script>
+  /* ═══════════════════════════════════════════════════════════════════
+     Train page — 4-class aware.
+     ═══════════════════════════════════════════════════════════════════ */
+  document.addEventListener("DOMContentLoaded", () => {
+    ForzaTek.mount("train");
+
+    // 4-class color palette mirrors label.html exactly.
+    const SEG_CLASSES = [
+      { id: 0, name: "offroad", color: [220, 140, 40]  },
+      { id: 1, name: "road",    color: [80,  220, 130] },
+      { id: 2, name: "curb",    color: [80,  200, 240] },
+      { id: 3, name: "wall",    color: [220, 80,  220] },
+    ];
+
+    /* ─── State ──────────────────────────────────────────── */
+    const S = {
+      pollProgress:  null,
+      pollStats:     null,
+      lastEpochSeen: -1,
+      series: { epoch: [], train_loss: [], val_loss: [] },
+      charts: {},
+      activeTab: "loss",
+      cudaAvailable: null,
+    };
+
+    /* ─── DOM refs ───────────────────────────────────────── */
+    const $ = (id) => document.getElementById(id);
+    const E = {
+      archPill:       $("archPill"),
+      devicePill:     $("devicePill"),
+      statusPill:     $("statusPill"),
+      updatedPill:    $("updatedPill"),
+      rLabeled:       $("rLabeled"),
+      rSeg:           $("rSeg"),
+      rDet:           $("rDet"),
+      rVersions:      $("rVersions"),
+      rActive:        $("rActive"),
+      rGpu:           $("rGpu"),
+      rTorch:         $("rTorch"),
+      verdict:        $("verdict"),
+      cfgName:        $("cfgName"),
+      cfgEpochs:      $("cfgEpochs"),
+      cfgBatch:       $("cfgBatch"),
+      cfgLR:          $("cfgLR"),
+      cfgVal:         $("cfgVal"),
+      cfgSeed:        $("cfgSeed"),
+      cfgDevice:      $("cfgDevice"),
+      cfgWorkers:     $("cfgWorkers"),
+      cfgResume:      $("cfgResume"),
+      btnStart:       $("btnStart"),
+      btnCancel:      $("btnCancel"),
+      btnPredict:     $("btnPredict"),
+      progressLabel:  $("progressLabel"),
+      progressThroughput: $("progressThroughput"),
+      progressEta:    $("progressEta"),
+      progressFill:   $("progressFill"),
+      coverageBanner: $("coverageBanner"),
+      mTrainLoss:     $("mTrainLoss"),
+      mValLoss:       $("mValLoss"),
+      mMIoU:          $("mMIoU"),
+      mCoverage:      $("mCoverage"),
+      tileCoverage:   $("tileCoverage"),
+      classIouRow:    $("classIouRow"),
+      chartLossEmpty: $("chartLossEmpty"),
+      logBox:         $("logBox"),
+      logCount:       $("logCount"),
+      ckptList:       $("ckptList"),
+      cachePill:      $("cachePill"),
+      cFrames:        $("cFrames"),
+      cSize:          $("cSize"),
+      cBuilt:         $("cBuilt"),
+      cStatus:        $("cStatus"),
+      cacheProgress:  $("cacheProgress"),
+      cacheLabel:     $("cacheLabel"),
+      cacheCounts:    $("cacheCounts"),
+      cacheFill:      $("cacheFill"),
+      btnCacheBuild:  $("btnCacheBuild"),
+      btnCacheCancel: $("btnCacheCancel"),
+      btnCacheClear:  $("btnCacheClear"),
+      cfgCacheWorkers: $("cfgCacheWorkers"),
+    };
+
+    /* ─── Helpers ────────────────────────────────────────── */
+    const fmtN = (v, d = 4) => {
+      if (v === null || v === undefined) return "—";
+      const n = Number(v);
+      return Number.isFinite(n) ? n.toFixed(d) : "—";
+    };
+    const fmtInt = (v) => {
+      if (v === null || v === undefined || isNaN(v)) return "—";
+      return Number(v).toLocaleString();
+    };
+    const fmtPct = (v, d = 1) => {
+      if (v === null || v === undefined) return "—";
+      const n = Number(v);
+      return Number.isFinite(n) ? (n * 100).toFixed(d) + "%" : "—";
+    };
+    const fmtBytes = (b) => {
+      if (!b || isNaN(b)) return "—";
+      const u = ["B", "KB", "MB", "GB"];
+      let i = 0; let v = Number(b);
+      while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+      return v.toFixed(i ? 1 : 0) + " " + u[i];
+    };
+    const fmtAgo = (ts) => {
+      if (!ts) return "—";
+      const s = Math.max(0, (Date.now() / 1000) - Number(ts));
+      if (s < 60)   return `${Math.floor(s)}s ago`;
+      if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+      return `${Math.floor(s / 3600)}h ago`;
+    };
+    const escapeHtml = (s) =>
+      String(s).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+    /* Build the 4 per-class IoU tiles up front so layout is stable. */
+    function buildClassIouRow() {
+      E.classIouRow.innerHTML = "";
+      for (const c of SEG_CLASSES) {
+        const tile = document.createElement("div");
+        tile.className = "class-iou-tile";
+        tile.id = `tileClass_${c.name}`;
+        tile.innerHTML = `
+          <div class="k">
+            <span class="swatch" style="background: rgb(${c.color.join(",")})"></span>
+            <span>${c.name}</span>
+          </div>
+          <div class="v" id="iouClass_${c.name}">—</div>
+          <div class="cov" id="covClass_${c.name}">— of real px</div>`;
+        E.classIouRow.appendChild(tile);
+      }
+    }
+
+    /* ─── Tab switching ──────────────────────────────────── */
+    document.querySelectorAll(".tab-strip .tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const id = tab.dataset.tab;
+        document.querySelectorAll(".tab-strip .tab").forEach((t) =>
+          t.classList.toggle("active", t.dataset.tab === id));
+        document.querySelectorAll(".tab-pane").forEach((p) =>
+          p.classList.toggle("active", p.dataset.pane === id));
+        S.activeTab = id;
+        if (S.charts[id] && typeof S.charts[id].resize === "function") {
+          S.charts[id].resize();
+        }
+      });
+    });
+
+    /* ─── Chart.js theme & build ─────────────────────────── */
+    function applyChartDefaults() {
+      if (!window.Chart) return;
+      Chart.defaults.color = "#a8b0bb";
+      Chart.defaults.borderColor = "#2a313c";
+      Chart.defaults.font.family =
+        "'JetBrains Mono', ui-monospace, Consolas, monospace";
+      Chart.defaults.font.size = 11;
+    }
+
+    function buildLossChart() {
+      const canvas = $("chartLoss");
+      if (!canvas) return;
+      S.charts.loss = new Chart(canvas.getContext("2d"), {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: "train loss",
+              data: [],
+              borderColor: "#6b8faf",
+              backgroundColor: "rgba(107, 143, 175, 0.15)",
+              borderWidth: 1.5,
+              tension: 0.25,
+              pointRadius: 2.5,
+              pointHoverRadius: 4,
+              fill: false,
+              spanGaps: true,
+            },
+            {
+              label: "val loss",
+              data: [],
+              borderColor: "#d4a04a",
+              backgroundColor: "rgba(212, 160, 74, 0.15)",
+              borderWidth: 1.5,
+              tension: 0.25,
+              pointRadius: 2.5,
+              pointHoverRadius: 4,
+              borderDash: [4, 3],
+              fill: false,
+              spanGaps: true,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              position: "top",
+              align: "end",
+              labels: { boxWidth: 12, boxHeight: 2, padding: 12 },
+            },
+            tooltip: {
+              backgroundColor: "#1f242d",
+              borderColor: "#2a313c",
+              borderWidth: 1,
+              titleColor: "#e6e8eb",
+              bodyColor: "#a8b0bb",
+              padding: 10,
+              displayColors: true,
+              boxWidth: 8, boxHeight: 8,
+              usePointStyle: true,
+              callbacks: {
+                title: (items) => items.length ? `epoch ${items[0].label}` : "",
+                label: (item) => {
+                  const v = item.parsed.y;
+                  return ` ${item.dataset.label}: ${
+                    v == null || !Number.isFinite(v) ? "—" : v.toFixed(4)
+                  }`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              title: { display: true, text: "epoch", color: "#6b7480", font: { size: 10 } },
+              grid: { color: "rgba(42, 49, 60, 0.5)", drawBorder: false },
+              ticks: { color: "#6b7480", maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+            },
+            y: {
+              title: { display: true, text: "loss", color: "#6b7480", font: { size: 10 } },
+              grid: { color: "rgba(42, 49, 60, 0.5)", drawBorder: false },
+              ticks: { color: "#6b7480" },
+              beginAtZero: false,
+            },
+          },
+        },
+      });
+    }
+
+    function pushEpoch(epoch, train_loss, val_loss) {
+      const last = S.series.epoch.length
+        ? S.series.epoch[S.series.epoch.length - 1] : 0;
+      if (epoch <= last) return;
+      S.series.epoch.push(epoch);
+      const tl = Number(train_loss);
+      const vl = Number(val_loss);
+      S.series.train_loss.push(Number.isFinite(tl) ? tl : null);
+      S.series.val_loss.push(Number.isFinite(vl) ? vl : null);
+    }
+
+    function refreshLossChart() {
+      const c = S.charts.loss;
+      if (!c) return;
+      c.data.labels = S.series.epoch.slice();
+      c.data.datasets[0].data = S.series.train_loss.slice();
+      c.data.datasets[1].data = S.series.val_loss.slice();
+      c.update("none");
+      if (E.chartLossEmpty) {
+        E.chartLossEmpty.style.display = S.series.epoch.length === 0 ? "" : "none";
+      }
+    }
+
+    /* ─── Form lock state ────────────────────────────────── */
+    function setRunning(running) {
+      [E.cfgName, E.cfgEpochs, E.cfgBatch, E.cfgLR, E.cfgVal,
+       E.cfgSeed, E.cfgDevice, E.cfgWorkers, E.cfgResume].forEach((el) => el.disabled = running);
+      E.btnStart.disabled   = running;
+      E.btnCancel.disabled  = !running;
+      E.btnPredict.disabled = running;
+    }
+
+    /* ─── Architecture & device probe ────────────────────── */
+    async function loadArch() {
+      try {
+        const a = await eel.perception_arch()();
+        if (a && a.input_w) {
+          E.archPill.textContent =
+            `${a.input_w}×${a.input_h} · seg×${a.num_seg} · det×${a.num_det}`;
+        }
+      } catch (e) { /* non-fatal */ }
+    }
+
+    async function loadDeviceInfo() {
+      let info = null;
+      try { info = await eel.perception_device_info()(); }
+      catch (e) { info = null; }
+      if (!info || info.error) {
+        E.rGpu.textContent = "unavailable";
+        E.rGpu.className = "v bad";
+        E.rTorch.textContent = "—";
+        E.devicePill.textContent = "device cpu";
+        E.devicePill.classList.add("bad");
+        S.cudaAvailable = false;
+        return;
+      }
+      S.cudaAvailable = !!info.cuda_available;
+      E.rTorch.textContent = `${info.torch_version} · cuda ${info.cuda_built || "—"}`;
+      if (info.cuda_available) {
+        E.rGpu.textContent = info.gpu_name || `cuda x${info.device_count}`;
+        E.rGpu.className = "v ok";
+        E.devicePill.textContent = "GPU";
+        E.devicePill.className = "pill nums ok";
+      } else {
+        E.rGpu.textContent = "not available — install CUDA torch";
+        E.rGpu.className = "v bad";
+        E.devicePill.textContent = "CPU only";
+        E.devicePill.className = "pill nums bad";
+        const forceCuda = E.cfgDevice.querySelector('option[value="cuda"]');
+        if (forceCuda) {
+          forceCuda.disabled = true;
+          forceCuda.textContent = "force GPU (unavailable)";
+        }
+      }
+    }
+
+    /* ─── Readiness ──────────────────────────────────────── */
+    async function refreshReadiness() {
+      let stats = null;
+      try { stats = await eel.perception_stats()(); }
+      catch (e) { return; }
+      if (!stats || stats.error) {
+        E.verdict.className = "verdict bad";
+        E.verdict.textContent = "stats unavailable";
+        return;
+      }
+      E.rLabeled.textContent = fmtInt(stats.labeled_frames);
+      E.rSeg.textContent     = fmtInt(stats.frames_with_seg);
+      E.rDet.textContent     = fmtInt(stats.frames_with_det);
+      const bv = stats.by_version || {};
+      E.rVersions.textContent = Object.keys(bv).length === 0
+        ? "—"
+        : Object.entries(bv)
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([k, n]) => `${k}:${n}`).join("  ");
+      E.rActive.textContent = stats.active_model
+        ? `${stats.active_model.name} · r${stats.active_model.round_num}`
+        : "none";
+
+      const n = Number(stats.labeled_frames || 0);
+      if (n >= 500) {
+        E.verdict.className = "verdict ok";
+        E.verdict.textContent =
+          `Ready to train. ${fmtInt(n)} labeled frames is enough for a useful first model.`;
+      } else if (n >= 100) {
+        E.verdict.className = "verdict warn";
+        E.verdict.textContent =
+          `Trainable but limited. ${fmtInt(n)} frames will produce a weak model — aim for 500+ before relying on it.`;
+      } else {
+        E.verdict.className = "verdict bad";
+        E.verdict.textContent =
+          `Not enough labeled data yet (${fmtInt(n)}). Label more in Module 4 first — recommended minimum 100, ideal 500+.`;
+      }
+
+      setRunning(!!stats.is_running);
+    }
+
+    /* ─── Live progress poller (4-class aware) ───────────── */
+    async function refreshProgress() {
+      let p = null;
+      try { p = await eel.perception_progress()(); }
+      catch (e) { return; }
+      if (!p) p = { status: "idle" };
+
+      E.statusPill.textContent = p.status || "idle";
+      E.statusPill.className = "pill nums";
+      if (p.status === "running")        E.statusPill.classList.add("warn");
+      else if (p.status === "done")      E.statusPill.classList.add("ok");
+      else if (p.status === "error")     E.statusPill.classList.add("bad");
+      else if (p.status === "cancelled") E.statusPill.classList.add("bad");
+      E.updatedPill.textContent = "updated " + new Date().toLocaleTimeString();
+
+      if (p.status === "idle" || !p.epochs) {
+        E.progressLabel.textContent = "no run yet";
+        E.progressThroughput.textContent = "—";
+        E.progressEta.textContent = "—";
+        E.progressFill.style.width = "0%";
+        E.coverageBanner.style.display = "none";
+        return;
+      }
+
+      const ep      = Number(p.epoch || 0);
+      const epochs  = Number(p.epochs || 1);
+      const step    = Number(p.step || 0);
+      const stepsEp = Number(p.steps_per_ep || 1);
+      const frac    = Math.max(0, Math.min(1,
+        (ep + (step / Math.max(1, stepsEp))) / Math.max(1, epochs)));
+      E.progressFill.style.width = (frac * 100).toFixed(1) + "%";
+      E.progressLabel.textContent = `epoch ${ep}/${epochs} · step ${step}/${stepsEp}`;
+
+      const sps  = Number(p.steps_per_sec);
+      const samp = Number(p.samples_per_sec);
+      if (Number.isFinite(sps) && sps > 0) {
+        E.progressThroughput.textContent =
+          `${sps.toFixed(2)} steps/s · ${Math.round(samp)} samples/s`;
+      } else {
+        E.progressThroughput.textContent = "—";
+      }
+
+      if (p.started_at && frac > 0.02) {
+        const elapsed = (Date.now() / 1000) - Number(p.started_at);
+        const total   = elapsed / frac;
+        const remain  = Math.max(0, total - elapsed);
+        const m = Math.floor(remain / 60);
+        const s = Math.floor(remain % 60);
+        E.progressEta.textContent = `eta ~${m}m ${s}s`;
+      } else {
+        E.progressEta.textContent = p.started_at ? "estimating…" : "—";
+      }
+
+      // Headline tiles.
+      E.mTrainLoss.textContent = fmtN(p.loss);
+      const v = p.val || {};
+      E.mValLoss.textContent = fmtN(v.val_loss);
+      E.mMIoU.textContent    = fmtN(v.miou, 3);
+
+      // Coverage tile — color-coded.
+      const cov = (v.pixel_coverage !== undefined) ? v.pixel_coverage : null;
+      E.mCoverage.textContent = (cov === null) ? "—" : fmtPct(cov, 1);
+      E.tileCoverage.classList.remove("warn", "bad");
+      if (cov !== null && Number.isFinite(cov)) {
+        if (cov < 0.10)      E.tileCoverage.classList.add("bad");
+        else if (cov < 0.30) E.tileCoverage.classList.add("warn");
+      }
+
+      // Per-class IoU tiles.
+      for (const c of SEG_CLASSES) {
+        const iou = v[`iou_${c.name}`];
+        const ccov = v[`class_coverage_${c.name}`];
+        const tile = $(`tileClass_${c.name}`);
+        const valEl = $(`iouClass_${c.name}`);
+        const covEl = $(`covClass_${c.name}`);
+        if (!tile) continue;
+        valEl.textContent = fmtN(iou, 3);
+        covEl.textContent = (ccov === undefined || ccov === null)
+          ? "— of real px"
+          : `${fmtPct(ccov, 0)} of real px`;
+        valEl.classList.remove("warn", "bad");
+        if (Number.isFinite(Number(iou)) && Number(iou) >= 0.999) {
+          // The exact pathology that fooled us before — flag it.
+          valEl.classList.add("bad");
+        } else if (ccov !== undefined && ccov !== null && ccov === 0) {
+          valEl.classList.add("warn");
+        }
+      }
+
+      // Coverage / class-collapse warning banner.
+      const banner = E.coverageBanner;
+      const messages = [];
+      let bannerBad = false;
+      if (v.coverage_warning) {
+        messages.push(`Pixel coverage is ${fmtPct(cov, 1)} — labels are too sparse, IoU values may be misleading. Re-run the auto-labeler with looser thresholds.`);
+        bannerBad = true;
+      }
+      const collapsed = SEG_CLASSES.filter(c => {
+        const x = v[`class_coverage_${c.name}`];
+        return x !== undefined && x !== null && x === 0;
+      }).map(c => c.name);
+      if (collapsed.length) {
+        messages.push(`Classes with zero coverage in val: ${collapsed.join(", ")}. Their IoU is undefined and may inflate mIoU.`);
+      }
+      if (v.class_collapse_warning && !collapsed.length) {
+        messages.push("Validation set is missing one or more classes — IoU values may be misleading.");
+      }
+      // Any class IoU exactly at 1.0 is a strong signal something's wrong.
+      const perfectIoU = SEG_CLASSES.filter(c => {
+        const x = v[`iou_${c.name}`];
+        return Number.isFinite(Number(x)) && Number(x) >= 0.999;
+      }).map(c => c.name);
+      if (perfectIoU.length) {
+        messages.push(`Perfect IoU detected on: ${perfectIoU.join(", ")} — almost never happens with real data, check your labels.`);
+        bannerBad = true;
+      }
+      if (messages.length) {
+        banner.textContent = messages.join("  ·  ");
+        banner.style.display = "";
+        banner.classList.toggle("bad", bannerBad);
+      } else {
+        banner.style.display = "none";
+      }
+
+      // Push a chart point per advancing epoch.
+      if (ep > S.lastEpochSeen && p.loss !== null && p.loss !== undefined) {
+        pushEpoch(ep, p.loss, v.val_loss);
+        S.lastEpochSeen = ep;
+        refreshLossChart();
+      }
+      if (p.status === "done" && S.series.epoch.length === 0
+          && p.loss !== null && p.loss !== undefined) {
+        pushEpoch(Number(p.epochs), p.loss, v.val_loss);
+        refreshLossChart();
+      }
+    }
+
+    /* ─── Log tail ──────────────────────────────────────── */
+    async function refreshLog() {
+      let lines = [];
+      try { lines = await eel.perception_log(200)(); }
+      catch (e) { return; }
+      if (!Array.isArray(lines)) return;
+      E.logCount.textContent = `${lines.length} lines`;
+      const box = E.logBox;
+      const wasNearBottom =
+        box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+      box.innerHTML = lines.map((line) => {
+        let cls = "";
+        if (/\bERROR\b/i.test(line))           cls = "error";
+        else if (/\bWARN\b/i.test(line))       cls = "warn";
+        else if (/\bdone\b|\bbest\b/i.test(line)) cls = "ok";
+        return `<div class="line ${cls}">${escapeHtml(line)}</div>`;
+      }).join("");
+      if (wasNearBottom) box.scrollTop = box.scrollHeight;
+    }
+
+    /* ─── Checkpoints (4-class breakdown) ─────────────────── */
+    async function refreshCheckpoints() {
+      let list = [];
+      try { list = await eel.perception_checkpoints()(); }
+      catch (e) { return; }
+      if (!Array.isArray(list)) list = [];
+
+      const prevValue = E.cfgResume.value;
+      E.cfgResume.innerHTML =
+        '<option value="">— start from ImageNet pretrained —</option>';
+      list.forEach((ck) => {
+        const opt = document.createElement("option");
+        opt.value = ck.path;
+        opt.textContent = ck.name + (ck.is_active ? " (active)" : "");
+        E.cfgResume.appendChild(opt);
+      });
+      if (prevValue && Array.from(E.cfgResume.options).some((o) => o.value === prevValue)) {
+        E.cfgResume.value = prevValue;
+      }
+
+      if (list.length === 0) {
+        E.ckptList.innerHTML =
+          '<div class="empty-block">No checkpoints yet — start a run to create one.</div>';
+        return;
+      }
+
+      list.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+      E.ckptList.innerHTML = "";
+      list.forEach((ck) => {
+        const lastVal = ck.last_val || {};
+        const meta =
+          (ck.epochs_seen ? `${ck.epochs_seen} ep · ` : "") +
+          fmtBytes(ck.size_bytes) + " · " + fmtAgo(ck.created_at);
+
+        // Headline pill = mIoU (one number you'd glance at to compare runs).
+        let headline = "—";
+        if (Number.isFinite(Number(lastVal.miou))) {
+          headline = `mIoU ${Number(lastVal.miou).toFixed(3)}`;
+        } else if (Number.isFinite(Number(lastVal.iou_road))) {
+          headline = `road ${Number(lastVal.iou_road).toFixed(3)}`;
+        }
+
+        const row = document.createElement("div");
+        row.className = "ckpt-row" + (ck.is_active ? " active" : "");
+
+        // Build the per-class breakdown row: 4 class cells + 1 coverage cell.
+        const cells = [];
+        for (const c of SEG_CLASSES) {
+          const v = lastVal[`iou_${c.name}`];
+          let valStr = "—", cls = "";
+          if (Number.isFinite(Number(v))) {
+            valStr = Number(v).toFixed(3);
+            if (Number(v) >= 0.999) cls = "bad";
+            else if (Number(v) === 0) cls = "warn";
+          }
+          cells.push(`
+            <div class="cell">
+              <div class="label">
+                <span class="swatch" style="background: rgb(${c.color.join(",")})"></span>
+                <span>${c.name}</span>
+              </div>
+              <div class="val ${cls}">${valStr}</div>
+            </div>`);
+        }
+        // Coverage cell.
+        const cov = lastVal.pixel_coverage;
+        let covStr = "—", covCls = "";
+        if (Number.isFinite(Number(cov))) {
+          covStr = fmtPct(cov, 0);
+          if (Number(cov) < 0.10)      covCls = "bad";
+          else if (Number(cov) < 0.30) covCls = "warn";
+        }
+        cells.push(`
+          <div class="cell">
+            <div class="label"><span>coverage</span></div>
+            <div class="val ${covCls}">${covStr}</div>
+          </div>`);
+
+        // Optional warning bar above the breakdown.
+        const warns = [];
+        let warnBad = false;
+        if (lastVal.coverage_warning) {
+          warns.push(`coverage ${covStr} is too low — labels too sparse`);
+          warnBad = true;
+        }
+        if (lastVal.class_collapse_warning && !lastVal.coverage_warning) {
+          warns.push("validation set missing one or more classes");
+        }
+        const perfect = SEG_CLASSES.filter(c => {
+          const x = lastVal[`iou_${c.name}`];
+          return Number.isFinite(Number(x)) && Number(x) >= 0.999;
+        }).map(c => c.name);
+        if (perfect.length) {
+          warns.push(`perfect IoU on ${perfect.join(", ")} — likely a labeling bug`);
+          warnBad = true;
+        }
+        const warnHtml = warns.length
+          ? `<div class="ckpt-warn ${warnBad ? "bad" : ""}">${escapeHtml(warns.join("  ·  "))}</div>`
+          : "";
+
+        row.innerHTML = `
+          <div class="top-line">
+            <div>
+              <div class="name" title="${escapeHtml(ck.path)}">${escapeHtml(ck.name)}</div>
+              <div class="meta">${escapeHtml(meta)}</div>
+            </div>
+            <span class="pill nums">${escapeHtml(headline)}</span>
+            <div style="display: flex; gap: 6px;">
+              <button class="btn" data-act="activate">${ck.is_active ? "Active" : "Activate"}</button>
+              <button class="btn" data-act="resume" title="Pre-fill resume">Resume</button>
+            </div>
+          </div>
+          ${warnHtml}
+          <div class="ckpt-classes">${cells.join("")}</div>
+        `;
+        row.querySelector('[data-act="activate"]').onclick = async () => {
+          if (ck.is_active) return;
+          const ok = await eel.perception_activate(ck.path)();
+          if (ok) { refreshCheckpoints(); refreshReadiness(); }
+        };
+        row.querySelector('[data-act="resume"]').onclick = () => {
+          E.cfgResume.value = ck.path;
+        };
+        E.ckptList.appendChild(row);
+      });
+    }
+
+    /* ─── Actions ────────────────────────────────────────── */
+    E.btnStart.onclick = async () => {
+      const name = E.cfgName.value.trim() || "perception_v1";
+      const params = {
+        run_name:   name,
+        epochs:     Math.max(1, Number(E.cfgEpochs.value) || 30),
+        batch_size: Math.max(1, Number(E.cfgBatch.value)  || 8),
+        lr:         Math.max(1e-7, Number(E.cfgLR.value)  || 3e-4),
+        val_frac:   Math.min(0.5, Math.max(0.05, Number(E.cfgVal.value) || 0.15)),
+        seed:       Number.isFinite(Number(E.cfgSeed.value)) ? Number(E.cfgSeed.value) : 0,
+      };
+      const dev = E.cfgDevice.value;
+      if (dev) params.device = dev;
+      const workers = Number(E.cfgWorkers.value);
+      if (Number.isFinite(workers) && workers >= 0) params.num_workers = workers;
+      const resume = E.cfgResume.value;
+      if (resume) params.resume = resume;
+
+      S.series = { epoch: [], train_loss: [], val_loss: [] };
+      S.lastEpochSeen = -1;
+      refreshLossChart();
+      E.logBox.innerHTML = "";
+      E.coverageBanner.style.display = "none";
+
+      const r = await eel.perception_train_start(params)();
+      if (!r || !r.started) {
+        alert("Failed to start training: " + (r && r.error ? r.error : "unknown error"));
+        return;
+      }
+      setRunning(true);
+    };
+
+    E.btnCancel.onclick = async () => {
+      E.btnCancel.disabled = true;
+      try { await eel.perception_cancel()(); } catch (e) { /* ignore */ }
+    };
+
+    E.btnPredict.onclick = async () => {
+      E.btnPredict.disabled = true;
+      const original = E.btnPredict.textContent;
+      E.btnPredict.textContent = "running…";
+      try {
+        const r = await eel.perception_predict(200, 50)();
+        if (!r || !r.ok) {
+          alert("Active learning failed: " + (r && r.error ? r.error : "unknown"));
+        } else {
+          alert(`Scored ${r.scored} frames, queued ${r.queued} for review.`);
+        }
+      } finally {
+        E.btnPredict.textContent = original;
+        E.btnPredict.disabled = false;
+      }
+    };
+
+    /* ─── Cache panel ─────────────────────────────────────── */
+    async function refreshCache() {
+      let s = null;
+      try { s = await eel.perception_cache_status()(); } catch (e) { return; }
+      if (!s) return;
+
+      const dbCur = s.current_db || {};
+      const dbCache = s.cache_db || {};
+
+      let pill = "—", pillCls = "pill nums";
+      let statusText = "—", statusCls = "v";
+      if (s.build_running || s.build_in_progress) {
+        pill = "BUILDING"; pillCls = "pill nums warn";
+        statusText = "building cache…"; statusCls = "v warn";
+      } else if (!s.exists) {
+        pill = "NOT BUILT"; pillCls = "pill nums bad";
+        statusText = "not built — training will fall back to slow SQLite path"; statusCls = "v bad";
+      } else if (!s.fresh) {
+        pill = "STALE"; pillCls = "pill nums warn";
+        const cFrames = dbCache.n_frames || 0;
+        const dbFrames = dbCur.n_frames || 0;
+        statusText = `stale (cache=${cFrames}, db=${dbFrames}) — rebuild before training`;
+        statusCls = "v warn";
+      } else {
+        pill = "FRESH"; pillCls = "pill nums ok";
+        statusText = "fresh — training will use the memmap cache"; statusCls = "v ok";
+      }
+      E.cachePill.textContent = pill;
+      E.cachePill.className = pillCls;
+      E.cStatus.textContent = statusText;
+      E.cStatus.className = statusCls;
+
+      E.cFrames.textContent = s.exists ? fmtInt(s.n_frames) : "—";
+      E.cSize.textContent   = s.exists ? fmtBytes(s.size_bytes) : "—";
+      E.cBuilt.textContent  = s.built_at ? fmtAgo(s.built_at) : "—";
+
+      const building = !!(s.build_running || s.build_in_progress);
+      E.btnCacheBuild.disabled  = building;
+      E.btnCacheCancel.disabled = !building;
+      E.btnCacheClear.disabled  = building || !s.exists;
+      E.btnCacheBuild.textContent = s.fresh ? "Rebuild cache" : "Build cache";
+
+      if (building) {
+        E.cacheProgress.style.display = "";
+        try {
+          const p = await eel.perception_cache_progress()();
+          renderCacheProgress(p);
+        } catch (e) { /* ignore */ }
+      } else {
+        E.cacheProgress.style.display = "none";
+      }
+    }
+
+    function renderCacheProgress(p) {
+      if (!p) return;
+      const total   = Number(p.total || 0);
+      const scanned = Number(p.scanned || 0);
+      const kept    = Number(p.kept || 0);
+      const skipped = Number(p.skipped || 0);
+      const frac = total > 0 ? Math.min(1, scanned / total) : 0;
+      E.cacheFill.style.width = (frac * 100).toFixed(1) + "%";
+      const phase = p.phase || (p.status === "running" ? "running" : (p.status || ""));
+      E.cacheLabel.textContent =
+        total > 0 ? `${phase} · ${fmtInt(scanned)}/${fmtInt(total)}` : phase;
+      E.cacheCounts.textContent = (kept || skipped)
+        ? `kept ${fmtInt(kept)}${skipped ? " · skipped " + fmtInt(skipped) : ""}`
+        : "—";
+    }
+
+    E.btnCacheBuild.onclick = async () => {
+      E.btnCacheBuild.disabled = true;
+      const w = Number(E.cfgCacheWorkers.value) || 0;
+      const r = await eel.perception_cache_build(w)();
+      if (!r || !r.started) {
+        alert("Could not start cache build: " + (r && r.error ? r.error : "unknown"));
+        E.btnCacheBuild.disabled = false;
+      } else {
+        refreshCache();
+      }
+    };
+    E.btnCacheCancel.onclick = async () => {
+      E.btnCacheCancel.disabled = true;
+      try { await eel.perception_cache_cancel()(); } catch (e) { /* ignore */ }
+    };
+    E.btnCacheClear.onclick = async () => {
+      if (!confirm("Delete the cached dataset files? Training will fall back to SQLite until you rebuild.")) return;
+      try { await eel.perception_cache_clear()(); } catch (e) { /* ignore */ }
+      refreshCache();
+    };
+
+    /* ─── Polling ────────────────────────────────────────── */
+    async function tickFast() {
+      await Promise.all([refreshProgress(), refreshLog(), refreshCache()]);
+    }
+    async function tickSlow() {
+      await Promise.all([refreshReadiness(), refreshCheckpoints()]);
+    }
+
+    /* ─── Init ───────────────────────────────────────────── */
+    function start() {
+      if (!window.Chart) {
+        setTimeout(start, 80);
+        return;
+      }
+      applyChartDefaults();
+      buildLossChart();
+      refreshLossChart();
+
+      buildClassIouRow();
+
+      loadArch();
+      loadDeviceInfo();
+      tickFast();
+      tickSlow();
+
+      S.pollProgress = setInterval(tickFast, 1000);
+      S.pollStats    = setInterval(tickSlow, 5000);
+    }
+
+    window.addEventListener("beforeunload", () => {
+      if (S.pollProgress) clearInterval(S.pollProgress);
+      if (S.pollStats)    clearInterval(S.pollStats);
+    });
+
+    start();
+  });
+  </script>
+
+</body>
+</html>

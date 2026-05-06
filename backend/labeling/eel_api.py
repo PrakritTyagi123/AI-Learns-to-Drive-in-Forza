@@ -15,9 +15,11 @@ Exposed names (call from JS as `eel.fn_name(args)()`):
     label_manual(frame_id, seg_b64, boxes)   -> bool
     label_unlabel(frame_id)                  -> bool
     label_skip(frame_id)                     -> bool
-    auto_label_start(conf_thr, ent_thr)      -> dict
+    auto_label_start(conf, min_cov, batch,
+                     include_queued, wipe)   -> dict
     auto_label_cancel()                      -> bool
     auto_label_status()                      -> dict
+    auto_label_preview()                     -> dict   ← live preview poller
 
 Binary frame JPEGs go through routes.py — base64 over the JS bridge is
 slow, and the canvas swaps frames every few seconds.
@@ -151,19 +153,30 @@ def register_eel(eel) -> None:
     # ─── Auto-labeler controls ──────────────────────────────────────────
     @eel.expose
     def auto_label_start(
-        confidence_threshold: float = 0.85,
-        entropy_threshold:    float = 0.50,
-        batch_size:           int   = 8,
-        decisive_threshold:   float = 0.85,
+        confidence_threshold: float = 0.70,
+        min_class_coverage:   float = 0.30,
+        batch_size:           int   = 16,
         include_queued:       bool  = False,
+        wipe_existing:        bool  = False,
     ) -> dict:
+        """Start the 4-class auto-labeler.
+
+        confidence_threshold : YOLO box min confidence to auto-trust a frame.
+        min_class_coverage   : minimum fraction of seg pixels with a real
+                               class (0..3) to auto-trust a frame. Default 0.30.
+        batch_size           : GPU batch size for inference.
+        include_queued       : also reprocess frames currently in active_queue.
+        wipe_existing        : delete all auto_trusted labels first. Manual
+                               labels are preserved. Use after changing the
+                               pixel-confidence threshold in settings.json.
+        """
         try:
             return auto_labeler.start(
-                confidence_threshold=float(confidence_threshold),
-                entropy_threshold=float(entropy_threshold),
-                batch_size=int(batch_size),
-                decisive_threshold=float(decisive_threshold),
-                include_queued=bool(include_queued),
+                confidence_threshold = float(confidence_threshold),
+                min_class_coverage   = float(min_class_coverage),
+                batch_size           = int(batch_size),
+                include_queued       = bool(include_queued),
+                wipe_existing        = bool(wipe_existing),
             )
         except Exception as e:
             log.exception("auto_label_start failed: %s", e)
@@ -187,7 +200,12 @@ def register_eel(eel) -> None:
 
     @eel.expose
     def auto_label_preview() -> dict:
-        """Most recently processed frame's seg + boxes, for the live UI panel."""
+        """Most recently processed frame's seg + boxes, for the live UI panel.
+
+        Note: the function name MUST match what label.html calls
+        (`eel.auto_label_preview()`). Renamed from the older
+        `auto_label_get_preview` to align with the 4-class UI rebuild.
+        """
         try:
             return auto_labeler.get_preview()
         except Exception as e:

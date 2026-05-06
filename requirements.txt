@@ -1,7 +1,7 @@
 # ForzaTek AI v2 — Requirements
 # ==============================
 # Covers Module 0 (Core) + Module 1 (System) + Module 2 (Ingest) +
-# Module 3 (HUD Mask) + Module 4 (Labeling).
+# Module 3 (HUD Mask) + Module 4 (Labeling) + Module 5 (Perception).
 # Later modules will append to this file as they're built.
 #
 # Install with:
@@ -25,7 +25,7 @@ opencv-python-headless>=4.9,<5.0
 dxcam==0.0.5 ; sys_platform == "win32"
 mss>=9.0,<11.0
 requests>=2.31,<3
-yt-dlp
+yt-dlp>=2025.1.15
 
 # ─── Module 3 (HUD Mask) ───
 # No new dependencies — reuses numpy + opencv-python-headless.
@@ -45,3 +45,15 @@ torch>=2.2,<3
 # CUDA users: if you want GPU, install torch from https://pytorch.org first
 # with the CUDA wheel matching your driver, THEN run pip install -r requirements.txt.
 # Otherwise pip will install CPU-only torch and inference will be slow but work.
+
+# ─── Module 5 (Perception) ───                                       # ← NEW
+# torchvision provides the MobileNetV3-Small backbone with ImageNet
+# pretrained weights. ultralytics already pulls torch in; torchvision is
+# its own package, so it must be listed explicitly.
+torchvision>=0.17,<1.0                                                # ← NEW
+# Pillow is used by predict.py to encode seg-mask PNGs and by dataset.py
+# as a fallback when OpenCV isn't available. Most environments already have
+# it (transformers depends on it), but pin it for clarity.
+Pillow>=10.0                                                          # ← NEW
+# psutil for RAM-safety guard at training startup. Optional but recommended.
+psutil>=5.9                                                           # ← NEW

@@ -61,6 +61,10 @@ from backend.hud_mask import routes  as hud_mask_routes
 from backend.labeling import eel_api as labeling_eel_api
 from backend.labeling import routes  as labeling_routes
 
+# Module 5 — Perception                                           
+from backend.perception import eel_api as perception_eel_api      
+from backend.perception import routes  as perception_routes       
+
 # ─── Logging ───────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -139,6 +143,9 @@ def _build_fastapi_app() -> FastAPI:
     # Module 4 — Labeling routes (SSE stream)
     labeling_routes.register_routes(app)
 
+    # Module 5 — Perception
+    perception_routes.register_routes(app)
+
     return app
 
 
@@ -192,6 +199,9 @@ def _register_all_eel_apis() -> None:
 
     # Module 4 — Labeling
     labeling_eel_api.register_eel(eel)
+
+    # Module 5 — Perception
+    perception_eel_api.register_eel(eel)
 
 # ─── Boot ──────────────────────────────────────────────────────────────────
 def main() -> int:
