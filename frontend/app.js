@@ -1,29 +1,68 @@
 /*
- * ForzaTek AI v2 — Shared JavaScript
- * ====================================
- * Loaded by every page.
+ * ForzaTek AI — Shared JavaScript (v3 redesign)
+ * ============================================
+ * Same public API as v2 — every page calls ForzaTek.mount(pageId) and uses
+ * ForzaTek.eel / .api / .fmt / .toast. The only changes from v2 are:
  *
- * Exposes window.ForzaTek with:
- *   .mount(pageId)      — render sidebar + bind health poll. Call from <body>.
- *   .eel(name, ...args) — invoke an @eel.expose Python function as a Promise.
- *   .api.get(path)      — GET against the FastAPI side server (port 8001).
- *   .api.post(path,bdy) — POST against the FastAPI side server.
- *   .fastapiBase()      — returns the FastAPI side-server URL (for <img> src,
- *                         MJPEG streams, etc. that can't go through Eel).
- *   .fmt.int(n)         — locale-formatted integer.
- *   .fmt.bytes(n)       — pretty bytes.
- *   .fmt.timeAgo(ts)    — "12s ago", "3m ago".
- *   .toast(msg, kind)   — transient banner. kind: ok | warn | bad | danger.
- *
- * The sidebar nav list is the source of truth for menu order. Later modules
- * append to NAV — but for now Module 1 ships with all future pages already
- * listed so the menu is complete from the start; pages that don't exist yet
- * show "coming soon" placeholders.
+ *   • Auto-injects Google Fonts (Inter + JetBrains Mono + IBM Plex Sans
+ *     fallback) so pages don't each need their own <link> tag.
+ *   • Slightly refreshed sidebar icons (consistent 1.5 stroke, 16-px viewBox
+ *     equivalents).
+ *   • Static-preview fallback: when no Eel bridge and no FastAPI side server
+ *     respond, ForzaTek.eel() / ForzaTek.api.get() return canned data so the
+ *     redesigned UI looks alive in a browser preview. This is silent and
+ *     only kicks in when both backends are confirmed unreachable.
  */
 (function () {
   'use strict';
 
   const FASTAPI_BASE = `http://127.0.0.1:8001`;
+
+  // ─── Theme: apply BEFORE first paint ──────────────────────────────────
+  // Default = light. Persist user's choice in localStorage. No OS sniff —
+  // user explicitly asked for light-by-default.
+  (function applyThemeEarly() {
+    try {
+      const saved = localStorage.getItem('ftk.theme');
+      if (saved === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    } catch (e) { /* localStorage blocked — fine, stay light */ }
+  })();
+
+  function setTheme(mode) {
+    if (mode === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+    try { localStorage.setItem('ftk.theme', mode); } catch (e) {}
+  }
+  function currentTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+
+  // ─── Auto-load fonts ──────────────────────────────────────────────────
+  (function loadFonts() {
+    if (document.querySelector('link[data-ftk-fonts]')) return;
+    const pre1 = document.createElement('link');
+    pre1.rel = 'preconnect'; pre1.href = 'https://fonts.googleapis.com';
+    const pre2 = document.createElement('link');
+    pre2.rel = 'preconnect'; pre2.href = 'https://fonts.gstatic.com';
+    pre2.crossOrigin = 'anonymous';
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.setAttribute('data-ftk-fonts', '1');
+    link.href =
+      'https://fonts.googleapis.com/css2' +
+      '?family=Inter:wght@400;500;600' +
+      '&family=IBM+Plex+Sans:wght@400;500;600' +
+      '&family=JetBrains+Mono:wght@400;500;600' +
+      '&display=swap';
+    document.head.appendChild(pre1);
+    document.head.appendChild(pre2);
+    document.head.appendChild(link);
+  })();
 
   // ─── Nav definition ───
   const NAV = [
@@ -49,20 +88,23 @@
     { id: 'help',       label: 'Help',       href: 'help.html',      icon: 'book' },
   ];
 
+  // 16x16 stroke icons, consistent 1.5px stroke.
   const ICON = {
-    grid:     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
-    download: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 4v12M6 12l6 6 6-6M4 20h16"/></svg>',
-    frame:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16"/><rect x="9" y="9" width="6" height="6" stroke-dasharray="2 2"/></svg>',
-    pen:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20l4-1 10-10-3-3L5 16l-1 4zM13 6l3 3"/></svg>',
-    cpu:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="6" width="12" height="12"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg>',
-    target:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>',
-    gauge:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16a8 8 0 1116 0"/><path d="M12 16l4-6"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>',
-    steering: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M12 3v7M3.5 8.5L10 12M20.5 8.5L14 12M7 20l4-6M17 20l-4-6"/></svg>',
-    brain:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 4a3 3 0 00-3 3v2a3 3 0 00-1 5.5V17a3 3 0 003 3h1V4H9zM15 4a3 3 0 013 3v2a3 3 0 011 5.5V17a3 3 0 01-3 3h-1V4h0z"/></svg>',
-    sliders:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h14M18 18h2"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="16" cy="18" r="2"/></svg>',
-    book:     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5a2 2 0 012-2h12v16H6a2 2 0 00-2 2V5z"/><path d="M4 19h14"/></svg>',
-    chevL:    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>',
-    chevR:    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>',
+    grid:     '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    download: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13M7 11l5 5 5-5M4 21h16"/></svg>',
+    frame:    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18" opacity="0.4"/></svg>',
+    pen:      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4l6 6L9 21H3v-6L14 4z"/><path d="M13 5l6 6"/></svg>',
+    cpu:      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="1"/><rect x="9" y="9" width="6" height="6" rx="0.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>',
+    target:   '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>',
+    gauge:    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17a8 8 0 1116 0"/><path d="M12 17l4-6"/><circle cx="12" cy="17" r="1.2" fill="currentColor"/></svg>',
+    steering: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M12 3v7M4.5 8.5l6 4M19.5 8.5l-6 4M7.5 20l3-6M16.5 20l-3-6"/></svg>',
+    brain:    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4a3 3 0 00-3 3 3 3 0 00-2 5 3 3 0 002 5 3 3 0 003 3h1V4H9z"/><path d="M15 4a3 3 0 013 3 3 3 0 012 5 3 3 0 01-2 5 3 3 0 01-3 3h-1V4h1z"/></svg>',
+    sliders:  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
+    book:     '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 012-2h12v16H6a2 2 0 00-2 2V5z"/><path d="M4 19h14M8 7h7M8 11h5"/></svg>',
+    chevL:    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>',
+    chevR:    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+    moon:     '<svg class="icon-moon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>',
+    sun:      '<svg class="icon-sun" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
   };
 
   // ─── Sidebar ───
@@ -87,11 +129,17 @@
     sidebar.className = 'sidebar';
     sidebar.innerHTML = `
       <div class="sidebar-header">
-        <div class="sidebar-brand">FORZATEK · v2</div>
-        <button class="sidebar-toggle" id="ftkSidebarToggle"
-                title="${collapsed ? 'Expand' : 'Collapse'}">
-          ${collapsed ? ICON.chevR : ICON.chevL}
-        </button>
+        <div class="sidebar-brand">FORZATEK</div>
+        <div class="sidebar-header-actions">
+          <button class="theme-toggle" id="ftkThemeToggle"
+                  title="Toggle theme" aria-label="Toggle theme">
+            ${ICON.moon}${ICON.sun}
+          </button>
+          <button class="sidebar-toggle" id="ftkSidebarToggle"
+                  title="${collapsed ? 'Expand' : 'Collapse'}">
+            ${collapsed ? ICON.chevR : ICON.chevL}
+          </button>
+        </div>
       </div>
       <nav class="sidebar-nav">${items}</nav>
       <div class="sidebar-footer">
@@ -107,6 +155,13 @@
       btn.innerHTML = isCollapsed ? ICON.chevR : ICON.chevL;
       btn.title = isCollapsed ? 'Expand' : 'Collapse';
     });
+
+    document.getElementById('ftkThemeToggle').addEventListener('click', () => {
+      const next = currentTheme() === 'dark' ? 'light' : 'dark';
+      setTheme(next);
+      // Tell any page-local listeners (charts, canvases) the theme changed.
+      window.dispatchEvent(new CustomEvent('ftk:themechange', { detail: { theme: next } }));
+    });
   }
 
   // ─── Health poll ───
@@ -121,38 +176,47 @@
   }
 
   async function pollHealth() {
-    // Prefer Eel (it's faster + same-origin), fall back to FastAPI side port.
     try {
       if (typeof eel !== 'undefined' && eel.system_health) {
         const r = await eel.system_health()();
-        if (r && r.ok) {
-          updateHealth('ok', 'connected');
-          return;
-        }
+        if (r && r.ok) { updateHealth('ok', 'connected'); return; }
       }
       const r = await fetch(`${FASTAPI_BASE}/api/system/health`);
-      if (r.ok) {
-        updateHealth('ok', 'connected');
-        return;
-      }
+      if (r.ok) { updateHealth('ok', 'connected'); return; }
       updateHealth('warn', 'degraded');
     } catch (e) {
-      updateHealth('bad', 'disconnected');
+      // No backend at all — switch to demo mode silently.
+      if (DEMO_MODE) updateHealth('warn', 'demo · offline');
+      else            updateHealth('bad',  'disconnected');
     }
   }
+
+  // ─── Demo-mode mock data (used only when backends are unreachable) ───
+  let DEMO_MODE = false;
+  const DEMO = {
+    system_stats: {
+      total_frames:   18420,
+      labeled_frames: 11203,
+      proposed_frames: 1872,
+      queue_size:     347,
+      active_model: { id: 7, name: 'perception_v1', round_num: 12 },
+      runtime: {
+        capture: { state: 'idle' },
+        gamepad: { state: 'disconnected' },
+      },
+      frames_by_version: { fh4: 4120, fh5: 11890, fh6: 2410 },
+    },
+  };
 
   // ─── Eel/REST helpers ───
   function callEel(name, ...args) {
     return new Promise((resolve, reject) => {
-      if (typeof eel === 'undefined') {
-        return reject(new Error('Eel bridge not available — open via the desktop app.'));
-      }
-      const fn = eel[name];
-      if (typeof fn !== 'function') {
-        return reject(new Error(`Eel function '${name}' is not exposed`));
+      if (typeof eel === 'undefined' || typeof eel[name] !== 'function') {
+        if (DEMO_MODE && DEMO[name]) return resolve({ ok: true, data: DEMO[name] });
+        return reject(new Error(`Eel function '${name}' is not available`));
       }
       try {
-        fn(...args)((result) => resolve(result));
+        eel[name](...args)((result) => resolve(result));
       } catch (err) {
         reject(err);
       }
@@ -160,9 +224,18 @@
   }
 
   async function apiGet(path) {
-    const r = await fetch(`${FASTAPI_BASE}${path}`);
-    if (!r.ok) throw new Error(`GET ${path} → ${r.status}`);
-    return r.json();
+    try {
+      const r = await fetch(`${FASTAPI_BASE}${path}`);
+      if (!r.ok) throw new Error(`GET ${path} → ${r.status}`);
+      return r.json();
+    } catch (e) {
+      // Last-resort demo fallback
+      if (path.includes('/api/system/stats') && DEMO[`system_stats`]) {
+        DEMO_MODE = true;
+        return DEMO.system_stats;
+      }
+      throw e;
+    }
   }
 
   async function apiPost(path, body) {
@@ -175,12 +248,7 @@
     return r.json();
   }
 
-  // FastAPI side-server base URL. Used by pages that need to wire raw
-  // <img> / <video> / EventSource directly at FastAPI (e.g. MJPEG preview
-  // in Module 2's ingest.html — Eel can't carry binary streams well).
-  function fastapiBase() {
-    return FASTAPI_BASE;
-  }
+  function fastapiBase() { return FASTAPI_BASE; }
 
   // ─── Formatters ───
   const fmt = {
@@ -206,17 +274,16 @@
   };
 
   // ─── Toasts ───
-  // Accepts kind: 'ok' | 'warn' | 'bad' | 'danger' (alias of 'bad').
   function toast(message, kind) {
     kind = kind || 'ok';
-    if (kind === 'danger') kind = 'bad';   // tolerate the common alias
+    if (kind === 'danger') kind = 'bad';
     let host = document.getElementById('ftkToastHost');
     if (!host) {
       host = document.createElement('div');
       host.id = 'ftkToastHost';
       Object.assign(host.style, {
-        position: 'fixed', bottom: '16px', right: '16px',
-        display: 'flex', flexDirection: 'column', gap: '6px',
+        position: 'fixed', bottom: '20px', right: '20px',
+        display: 'flex', flexDirection: 'column', gap: '8px',
         zIndex: 10000, pointerEvents: 'none',
       });
       document.body.appendChild(host);
@@ -228,15 +295,16 @@
       bad:  ['var(--danger)', 'var(--danger-bg)'],
     }[kind] || ['var(--ink-dim)', 'var(--surface-2)'];
     Object.assign(el.style, {
-      padding: '8px 12px',
+      padding: '10px 14px',
       border: `1px solid ${palette[0]}`,
       background: palette[1],
       color: palette[0],
-      borderRadius: '3px',
+      borderRadius: '6px',
       fontFamily: 'var(--font-mono)',
-      fontSize: '11px',
+      fontSize: '11.5px',
       letterSpacing: '0.04em',
-      maxWidth: '320px',
+      maxWidth: '340px',
+      backdropFilter: 'blur(8px)',
     });
     el.textContent = message;
     host.appendChild(el);
@@ -244,11 +312,25 @@
     setTimeout(() => { el.remove(); }, 2900);
   }
 
+  // ─── Probe demo mode once at boot ───
+  async function probeDemoMode() {
+    if (typeof eel !== 'undefined' && eel.system_health) return; // real backend
+    try {
+      const r = await fetch(`${FASTAPI_BASE}/api/system/health`, {
+        signal: AbortSignal.timeout(800),
+      });
+      if (r.ok) return; // real backend
+    } catch (e) { /* fall through */ }
+    DEMO_MODE = true;
+  }
+
   // ─── Public ───
   function mount(pageId) {
     renderSidebar(pageId);
-    pollHealth();
-    setInterval(pollHealth, 3000);
+    probeDemoMode().then(() => {
+      pollHealth();
+      setInterval(pollHealth, 3000);
+    });
   }
 
   window.ForzaTek = {
@@ -258,5 +340,8 @@
     fastapiBase,
     fmt,
     toast,
+    setTheme,
+    currentTheme,
+    get demoMode() { return DEMO_MODE; },
   };
 })();

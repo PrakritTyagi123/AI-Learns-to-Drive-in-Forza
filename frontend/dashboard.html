@@ -3,13 +3,100 @@
 <head>
   <meta charset="UTF-8">
   <title>ForzaTek — Dashboard</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="app.css">
 
   <!-- Eel must load BEFORE app.js so the bridge exists when ForzaTek.mount runs. -->
   <script type="text/javascript" src="/eel.js"></script>
   <script src="app.js"></script>
+
+  <style>
+    /* Page-local: section rhythm + workflow guide. */
+    .section-divider {
+      display: flex; align-items: center; gap: 12px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      letter-spacing: 0.22em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      margin: 26px 0 12px;
+    }
+    .section-divider::after {
+      content: ''; flex: 1; height: 1px;
+      background: var(--edge);
+    }
+
+    .workflow-ol {
+      counter-reset: wf;
+      list-style: none;
+      padding: 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 8px;
+    }
+    .workflow-ol li {
+      counter-increment: wf;
+      padding: 12px 14px 12px 50px;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      position: relative;
+      font-size: 13px;
+      color: var(--ink-dim);
+      line-height: 1.5;
+      transition: border-color var(--tx), background var(--tx);
+    }
+    .workflow-ol li:hover {
+      border-color: var(--edge-hot);
+      background: var(--surface-3);
+    }
+    .workflow-ol li::before {
+      content: counter(wf, decimal-leading-zero);
+      position: absolute;
+      left: 12px; top: 12px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.10em;
+      color: var(--accent);
+      padding: 3px 7px;
+      border: 1px solid rgba(232,80,26,0.35);
+      background: var(--accent-bg);
+      border-radius: 3px;
+    }
+    .workflow-ol li a {
+      font-weight: 500;
+      color: var(--ink);
+      border-bottom: 1px dotted var(--accent);
+    }
+    .workflow-ol li a:hover { color: var(--accent-2); }
+    .workflow-ol li .what { color: var(--ink-faint); font-size: 12px; margin-top: 2px; }
+
+    .version-rail {
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .version-rail .chip {
+      padding: 6px 12px;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--ink);
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .version-rail .chip .v-label {
+      letter-spacing: 0.14em;
+      color: var(--ink-faint);
+      font-size: 10px;
+      text-transform: uppercase;
+    }
+    .version-rail .chip .v-num { font-variant-numeric: tabular-nums; }
+    .version-rail .empty {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--ink-faint);
+      padding: 10px 0;
+    }
+  </style>
 </head>
 <body>
 
@@ -27,7 +114,8 @@
   </header>
 
   <!-- ── Workflow status cards ────────────────────────────────────────── -->
-  <section class="grid grid-auto" style="margin-bottom: 18px;">
+  <div class="section-divider">Pipeline status</div>
+  <section class="grid grid-auto">
 
     <a href="ingest.html" class="stat-card linkable" id="cardFrames">
       <div class="label">Frames captured</div>
@@ -53,6 +141,11 @@
       <div class="sub" id="subModel">no model trained</div>
     </a>
 
+  </section>
+
+  <div class="section-divider">Runtime</div>
+  <section class="grid grid-auto">
+
     <div class="stat-card state-idle" id="cardCapture">
       <div class="label">Capture</div>
       <div class="value nums" id="vCapture">idle</div>
@@ -68,22 +161,25 @@
   </section>
 
   <!-- ── Per-game-version breakdown ──────────────────────────────────── -->
-  <section class="panel" style="margin-bottom: 18px;">
+  <div class="section-divider">Coverage</div>
+  <section class="panel">
     <div class="panel-header">Frames by game version</div>
-    <div id="byVersionBody" class="muted">—</div>
+    <div id="byVersionBody" class="version-rail">
+      <span class="empty">—</span>
+    </div>
   </section>
 
   <!-- ── Workflow guide ──────────────────────────────────────────────── -->
+  <div class="section-divider">Where to start</div>
   <section class="panel">
-    <div class="panel-header">Where to start</div>
-    <ol style="padding-left: 18px; line-height: 1.8;">
-      <li><a href="ingest.html">Ingest</a> — capture or import frames (live, YouTube, video file).</li>
-      <li><a href="hud_mask.html">HUD mask</a> — mask the static game UI once per game version.</li>
-      <li><a href="label.html">Label</a> — auto-label with YOLO, fix the uncertain ones.</li>
-      <li><a href="train.html">Train</a> — train the perception model on confirmed labels.</li>
-      <li><a href="compare.html">Compare</a> — your model vs YOLO side by side.</li>
-      <li><a href="telemetry.html">Telemetry</a> — verify Forza is broadcasting on UDP.</li>
-      <li><a href="drive.html">Drive</a> — engage the rule-based or PPO policy.</li>
+    <ol class="workflow-ol">
+      <li><a href="ingest.html">Ingest</a><div class="what">Capture or import frames — live, YouTube, video file.</div></li>
+      <li><a href="hud_mask.html">HUD mask</a><div class="what">Mask the static game UI once per version.</div></li>
+      <li><a href="label.html">Label</a><div class="what">Auto-label with YOLO, fix the uncertain ones.</div></li>
+      <li><a href="train.html">Train</a><div class="what">Train the perception model on confirmed labels.</div></li>
+      <li><a href="compare.html">Compare</a><div class="what">Your model vs YOLO side by side.</div></li>
+      <li><a href="telemetry.html">Telemetry</a><div class="what">Verify Forza is broadcasting on UDP.</div></li>
+      <li><a href="drive.html">Drive</a><div class="what">Engage the rule-based or PPO policy.</div></li>
     </ol>
   </section>
 
@@ -179,10 +275,10 @@
     const bv = d.frames_by_version || {};
     const keys = Object.keys(bv);
     if (keys.length === 0) {
-      body.innerHTML = '<span class="muted">No frames yet — start with the Ingest page.</span>';
+      body.innerHTML = '<span class="empty">No frames yet — start with the Ingest page.</span>';
     } else {
       body.innerHTML = keys.sort().map(k =>
-        `<span class="pill nums" style="margin-right:6px;">${k.toUpperCase()} · ${fmt.int(bv[k])}</span>`
+        `<span class="chip"><span class="v-label">${k.toUpperCase()}</span><span class="v-num">${fmt.int(bv[k])}</span></span>`
       ).join('');
     }
 

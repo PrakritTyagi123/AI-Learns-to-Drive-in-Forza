@@ -3,11 +3,84 @@
 <head>
   <meta charset="UTF-8">
   <title>ForzaTek — Settings</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="app.css">
   <script type="text/javascript" src="/eel.js"></script>
   <script src="app.js"></script>
+  <style>
+    .stub-hero {
+      padding: 36px 36px 32px;
+      background: var(--surface);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-1);
+      position: relative;
+      overflow: hidden;
+    }
+    .stub-hero::before {
+      content: '';
+      position: absolute; left: 0; right: 0; top: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(232,80,26,0.40), transparent);
+    }
+    .stub-hero h2 {
+      font-size: 24px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+    .stub-hero p {
+      color: var(--ink-dim);
+      font-size: 13.5px;
+      line-height: 1.6;
+      max-width: 580px;
+      margin-bottom: 6px;
+    }
+    .stub-hero .module-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--font-mono); font-size: 10.5px;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--warn);
+      padding: 4px 10px;
+      border: 1px solid rgba(180,83,9,0.35);
+      background: var(--warn-bg);
+      border-radius: var(--radius-pill);
+      margin-bottom: 18px;
+    }
+    .stub-hero .back-link {
+      margin-top: 22px;
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: var(--font-mono); font-size: 11.5px;
+      color: var(--accent);
+    }
+    .stub-hero .back-link:hover { color: var(--accent-2); }
+    .stub-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+      margin-top: 24px;
+    }
+    .preview-tile {
+      padding: 16px;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+      opacity: 0.7;
+    }
+    .preview-tile .pt-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .preview-tile .pt-value {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      color: var(--ink-dim);
+    }
+  </style>
 </head>
 <body>
 
@@ -19,22 +92,41 @@
       <h1>Settings</h1>
     </div>
     <div class="pills">
-      <span class="pill warn">PLACEHOLDER</span>
+      <span class="pill warn">Module 9</span>
     </div>
   </header>
 
-  <section class="placeholder-block">
-    <p style="margin-bottom: 8px;">
-      <strong>This page is a stub.</strong>
-    </p>
+  <section class="stub-hero">
+    <div class="module-badge">
+      <span style="width: 6px; height: 6px; background: var(--warn); border-radius: 50%;"></span>
+      Coming soon
+    </div>
+    <h2>Persistent preferences ship in Module 9.</h2>
     <p>
-      Settings ship in <strong>Module 9</strong>. Until then, defaults from
-      <code>data/settings.json</code> are used everywhere they're needed.
+      Until then, defaults are read from <code>data/settings.json</code> wherever they are needed.
+      Edit that file and restart the app to change behavior.
     </p>
-    <p style="margin-top: 12px;">
-      <a href="dashboard.html">← Back to Dashboard</a>
-    </p>
+    <a href="dashboard.html" class="back-link">← Back to Dashboard</a>
   </section>
+
+  <div class="stub-grid">
+    <div class="preview-tile">
+      <div class="pt-label">Pipeline · pixel conf</div>
+      <div class="pt-value">seg_pixel_confidence_threshold</div>
+    </div>
+    <div class="preview-tile">
+      <div class="pt-label">Capture · backend</div>
+      <div class="pt-value">windows_graphics_capture</div>
+    </div>
+    <div class="preview-tile">
+      <div class="pt-label">Train · device</div>
+      <div class="pt-value">auto (cuda → cpu)</div>
+    </div>
+    <div class="preview-tile">
+      <div class="pt-label">Drive · panic key</div>
+      <div class="pt-value">Esc</div>
+    </div>
+  </div>
 
 </main>
 

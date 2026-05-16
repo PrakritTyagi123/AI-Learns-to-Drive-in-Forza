@@ -2,22 +2,75 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>HUD Mask · ForzaTek v2</title>
+  <title>ForzaTek — HUD mask</title>
   <link rel="stylesheet" href="app.css">
   <script src="/eel.js"></script>
   <script src="app.js"></script>
   <style>
-    /* Page-local styling. Keep in sync with app.css tokens. */
+    /* Page-specific. Everything else inherits from app.css. */
+
+    .hud-toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 11px 14px;
+      background: var(--surface);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+      flex-wrap: wrap;
+      box-shadow: var(--shadow-1);
+      margin-bottom: 18px;
+    }
+    .hud-toolbar .sep {
+      width: 1px; height: 22px;
+      background: var(--edge);
+      margin: 0 2px;
+    }
+    .hud-toolbar .field-inline {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .hud-toolbar .field-inline > label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+    }
+    .hud-toolbar select,
+    .hud-toolbar input[type="range"] {
+      margin: 0;
+    }
+    .hud-toolbar select {
+      min-width: 160px;
+    }
+    .hud-toolbar input[type="range"] { width: 110px; }
+    .hud-toolbar .brush-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-dim);
+      min-width: 36px;
+      text-align: right;
+    }
+    .tool-btn.active {
+      background: var(--accent-bg-2);
+      border-color: rgba(232,80,26,0.45);
+      color: var(--accent-2);
+    }
+
     .hud-layout {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 280px;
-      gap: 20px;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 18px;
     }
+    @media (max-width: 1100px) { .hud-layout { grid-template-columns: 1fr; } }
+
+    /* Canvas frame — 16:9, pure black, hairline edge */
     .canvas-wrap {
       position: relative;
-      background: var(--panel-2, #0d0f12);
-      border: 1px solid var(--border, #222);
-      border-radius: 8px;
+      background: var(--bg);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
       overflow: hidden;
       aspect-ratio: 16 / 9;
       width: 100%;
@@ -26,10 +79,6 @@
       justify-content: center;
     }
     .canvas-wrap.has-frame { background: #000; }
-    /* Image + canvas are stacked, both centered, both sized to fit
-       the wrapper while preserving their natural aspect ratio. They
-       share an identical layout box so paint strokes line up exactly
-       with the underlying frame pixels. */
     .frame-stack {
       position: relative;
       max-width: 100%;
@@ -51,103 +100,143 @@
       cursor: crosshair;
     }
     .canvas-empty {
-      color: var(--muted, #888);
-      font-size: 14px;
+      color: var(--ink-faint);
+      font-size: 13px;
       text-align: center;
       padding: 40px;
+      line-height: 1.7;
     }
-    .toolbar {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      margin-bottom: 12px;
-      align-items: center;
+    .canvas-empty .hint {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-faint);
+      letter-spacing: 0.08em;
+      margin-top: 6px;
     }
-    .toolbar .sep { width: 1px; height: 24px; background: var(--border, #222); margin: 0 4px; }
-    .tool-btn.active { background: var(--accent, #4af); color: #000; }
+
+    /* Preview grid: 4 thumbnails showing the mask applied to other frames */
     .preview-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-      margin-top: 12px;
+      gap: 10px;
+      margin-top: 14px;
     }
     .preview-grid img {
       width: 100%;
       aspect-ratio: 16 / 9;
       object-fit: cover;
       background: #000;
-      border: 1px solid var(--border, #222);
-      border-radius: 4px;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
     }
-    .saved-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
+    .preview-grid .empty-cell {
+      grid-column: span 2;
+      color: var(--ink-faint);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-align: center;
+      padding: 22px 12px;
+      border: 1px dashed var(--edge);
+      border-radius: var(--radius);
     }
+
+    .saved-list { display: flex; flex-direction: column; gap: 8px; }
     .saved-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 6px 10px;
-      background: var(--panel-2, #0d0f12);
-      border: 1px solid var(--border, #222);
-      border-radius: 4px;
-      font-size: 13px;
+      gap: 12px;
+      padding: 10px 12px;
+      background: var(--surface-2);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      transition: border-color var(--tx), background var(--tx);
     }
-    .saved-row .meta { color: var(--muted, #888); font-size: 11px; }
-    label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted, #888); }
-    label.field select, label.field input {
-      background: var(--panel-2, #0d0f12);
-      color: var(--fg, #eee);
-      border: 1px solid var(--border, #333);
-      padding: 6px 8px;
-      border-radius: 4px;
-      font-size: 13px;
+    .saved-row:hover { border-color: var(--edge-hot); background: var(--surface-3); }
+    .saved-row .gv {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--ink);
+      letter-spacing: 0.04em;
     }
-    .brush-size { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-    .brush-size input[type=range] { width: 100px; }
+    .saved-row .meta {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--ink-faint);
+      margin-top: 2px;
+    }
+    .saved-row .empty-msg {
+      color: var(--ink-faint);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 14px;
+      text-align: center;
+      border: 1px dashed var(--edge);
+      border-radius: var(--radius);
+    }
+
+    .panel h3 {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
   </style>
 </head>
 <body>
   <main class="page">
     <header class="page-header">
-      <h1>HUD mask</h1>
-      <p class="page-sub">
-        Paint over the static game UI (minimap, speedometer, gear, lap counter)
-        on one sample frame per game version. Stored once, applied everywhere.
-      </p>
+      <div>
+        <div class="crumb">Data · Module 2</div>
+        <h1>HUD mask</h1>
+        <div class="page-sub">
+          Paint over the static game UI (minimap, speedometer, gear, lap counter)
+          on one sample frame per game version. Stored once, applied everywhere.
+        </div>
+      </div>
     </header>
 
-    <section class="panel">
-      <div class="toolbar">
-        <label class="field" style="min-width: 140px;">
-          Game version
-          <select id="gameVersion"></select>
-        </label>
-        <button class="btn" id="loadSampleBtn">Load sample frame</button>
-        <div class="sep"></div>
-        <button class="btn tool-btn active" id="brushBtn">Brush</button>
-        <button class="btn tool-btn" id="eraserBtn">Eraser</button>
-        <div class="brush-size">
-          <span>Size</span>
-          <input type="range" id="brushSize" min="4" max="80" value="20">
-          <span id="brushSizeLabel">20px</span>
-        </div>
-        <div class="sep"></div>
-        <button class="btn" id="undoBtn" title="Ctrl+Z">Undo</button>
-        <button class="btn" id="redoBtn" title="Ctrl+Y">Redo</button>
-        <button class="btn" id="clearBtn">Clear all</button>
-        <div class="sep"></div>
-        <button class="btn btn-primary" id="saveBtn">Save mask</button>
+    <section class="hud-toolbar">
+      <div class="field-inline">
+        <label for="gameVersion">Version</label>
+        <select id="gameVersion" class="select"></select>
       </div>
+      <button class="btn" id="loadSampleBtn">Load sample frame</button>
+
+      <div class="sep"></div>
+
+      <button class="btn tool-btn active" id="brushBtn">Brush</button>
+      <button class="btn tool-btn" id="eraserBtn">Eraser</button>
+
+      <div class="field-inline">
+        <label>Size</label>
+        <input type="range" id="brushSize" min="4" max="80" value="20">
+        <span id="brushSizeLabel" class="brush-label">20px</span>
+      </div>
+
+      <div class="sep"></div>
+
+      <button class="btn" id="undoBtn" title="Ctrl+Z">Undo</button>
+      <button class="btn" id="redoBtn" title="Ctrl+Y">Redo</button>
+      <button class="btn" id="clearBtn">Clear all</button>
+
+      <div style="flex: 1"></div>
+
+      <button class="btn btn-primary" id="saveBtn">Save mask</button>
     </section>
 
     <div class="hud-layout">
       <section class="panel">
         <div id="canvasWrap" class="canvas-wrap">
           <div class="canvas-empty" id="canvasEmpty">
-            Pick a game version above and click <b>Load sample frame</b>.<br>
-            <span style="font-size: 12px;">If no frames are listed, ingest some first in the Ingest page.</span>
+            Pick a game version and click <strong>Load sample frame</strong>.
+            <span class="hint">If no frames are listed, ingest some first in the Ingest page.</span>
           </div>
           <div class="frame-stack" id="frameStack" style="display: none;">
             <img id="frameImg" alt="">
@@ -155,20 +244,16 @@
           </div>
         </div>
 
-        <div style="margin-top: 16px;">
-          <h3 style="margin: 0 0 8px 0; font-size: 13px; color: var(--muted, #888); text-transform: uppercase; letter-spacing: 0.5px;">Mask preview on other frames</h3>
-          <div class="preview-grid" id="previewGrid">
-            <div style="grid-column: span 2; color: var(--muted, #888); font-size: 12px; text-align: center; padding: 20px;">
-              Save a mask, then preview applies here.
-            </div>
-          </div>
+        <h3 style="margin-top: 18px;">Mask preview on other frames</h3>
+        <div class="preview-grid" id="previewGrid">
+          <div class="empty-cell">Save a mask, then preview applies here.</div>
         </div>
       </section>
 
       <aside class="panel">
-        <h3 style="margin: 0 0 10px 0; font-size: 13px; color: var(--muted, #888); text-transform: uppercase; letter-spacing: 0.5px;">Saved masks</h3>
+        <h3>Saved masks</h3>
         <div class="saved-list" id="savedList">
-          <div style="color: var(--muted, #888); font-size: 12px;">No masks saved yet.</div>
+          <div class="empty-msg">No masks saved yet.</div>
         </div>
       </aside>
     </div>
@@ -243,7 +328,7 @@
       const masks = await eel.hud_mask_list()();
       els.savedList.innerHTML = "";
       if (!masks.length) {
-        els.savedList.innerHTML = '<div style="color: var(--muted, #888); font-size: 12px;">No masks saved yet.</div>';
+        els.savedList.innerHTML = '<div class="empty-msg">No masks saved yet.</div>';
         return;
       }
       for (const m of masks) {
@@ -252,10 +337,10 @@
         const ts = new Date(m.updated_at * 1000).toLocaleString();
         row.innerHTML = `
           <div>
-            <div><b>${m.game_version}</b></div>
+            <div class="gv">${m.game_version}</div>
             <div class="meta">${m.rect_count} rect${m.rect_count === 1 ? "" : "s"} · ${ts}</div>
           </div>
-          <button class="btn btn-small btn-danger" data-gv="${m.game_version}">Delete</button>
+          <button class="btn btn-bad" data-gv="${m.game_version}">Delete</button>
         `;
         row.querySelector("button").addEventListener("click", () => deleteMask(m.game_version));
         els.savedList.appendChild(row);
@@ -362,18 +447,13 @@
     els.canvas.addEventListener("pointercancel", endStroke);
 
     // ─── Convert painted pixels → axis-aligned rects ──────────────────────
-    // We scan the alpha channel and find connected bounding boxes by
-    // running a coarse row-by-row scan — good enough since the mask is
-    // dozens of strokes, not millions of features.
     function extractRects() {
       const w = els.canvas.width, h = els.canvas.height;
       const data = ctx.getImageData(0, 0, w, h).data;
-      // Build a binary mask: 1 if alpha>10.
       const bin = new Uint8Array(w * h);
       for (let i = 0; i < w * h; i++) {
         if (data[i * 4 + 3] > 10) bin[i] = 1;
       }
-      // Connected-component labeling (4-connectivity) using a flat union-find.
       const parent = new Int32Array(w * h);
       for (let i = 0; i < parent.length; i++) parent[i] = i;
       function find(a) { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; }
@@ -386,7 +466,6 @@
           if (y > 0 && bin[idx - w])     union(idx, idx - w);
         }
       }
-      // Bounding boxes per root.
       const boxes = new Map();
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
@@ -403,7 +482,7 @@
         }
       }
       const rects = [];
-      const minArea = Math.max(20, (w * h) * 0.0001);  // toss specks
+      const minArea = Math.max(20, (w * h) * 0.0001);
       for (const b of boxes.values()) {
         if (b.area < minArea) continue;
         rects.push({
@@ -433,13 +512,13 @@
 
     async function refreshPreview() {
       if (!state.gameVersion) return;
-      els.preview.innerHTML = '<div style="grid-column: span 2; color: var(--muted, #888); font-size: 12px; text-align: center; padding: 12px;">Loading previews…</div>';
+      els.preview.innerHTML = '<div class="empty-cell">Loading previews…</div>';
       const base = ForzaTek.fastapiBase();
       const r = await fetch(`${base}/api/hud_mask/preview_list/${encodeURIComponent(state.gameVersion)}?n=4`);
       const data = await r.json();
       els.preview.innerHTML = "";
       if (!data.frame_ids || !data.frame_ids.length) {
-        els.preview.innerHTML = '<div style="grid-column: span 2; color: var(--muted, #888); font-size: 12px; text-align: center; padding: 12px;">No frames available.</div>';
+        els.preview.innerHTML = '<div class="empty-cell">No frames available.</div>';
         return;
       }
       for (const fid of data.frame_ids) {

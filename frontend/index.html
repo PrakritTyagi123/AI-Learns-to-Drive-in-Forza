@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ForzaTek — Redesign Preview</title>
+  <link rel="stylesheet" href="app.css" />
+  <script src="app.js"></script>
+  <style>
+    .hero {
+      padding: 44px 40px 40px;
+      background: var(--surface);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-2);
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 26px;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: var(--accent);
+    }
+    .hero .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.24em;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 18px;
+      display: inline-flex; align-items: center; gap: 10px;
+    }
+    .hero .eyebrow::before {
+      content: ''; width: 0; height: 0;
+      border-left: 6px solid var(--accent);
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+    }
+    .hero h1 {
+      font-size: 40px;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      color: var(--ink);
+      line-height: 1.1;
+      max-width: 760px;
+    }
+    .hero h1 span { color: var(--accent); }
+    .hero p {
+      font-size: 14.5px;
+      color: var(--ink-dim);
+      max-width: 660px;
+      margin-top: 16px;
+      line-height: 1.65;
+    }
+    .hero .meta {
+      margin-top: 24px;
+      display: flex; gap: 8px; flex-wrap: wrap;
+    }
+
+    .section-title {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.24em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      margin: 36px 0 16px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--edge);
+    }
+
+    .page-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 14px;
+    }
+    .page-card {
+      background: var(--surface);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+      padding: 20px 20px 18px;
+      position: relative;
+      display: block;
+      transition: border-color var(--tx), transform var(--tx), box-shadow var(--tx);
+      box-shadow: var(--shadow-1);
+      overflow: hidden;
+    }
+    .page-card:hover {
+      border-color: var(--edge-hot);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-2);
+    }
+    .page-card:hover .pc-title { color: var(--accent); }
+    .page-card:hover .pc-arrow { transform: translateX(3px); color: var(--accent); }
+
+    .pc-icon {
+      width: 36px; height: 36px;
+      border-radius: var(--radius);
+      background: var(--accent-bg);
+      display: inline-flex; align-items: center; justify-content: center;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+    .pc-title {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--ink);
+      letter-spacing: -0.01em;
+      transition: color var(--tx);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .pc-arrow {
+      color: var(--ink-faint);
+      transition: transform var(--tx), color var(--tx);
+    }
+    .pc-sub {
+      font-size: 12.5px;
+      color: var(--ink-dim);
+      line-height: 1.55;
+      margin-top: 6px;
+    }
+    .pc-tag {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      margin-top: 14px;
+    }
+    .pc-tag.stub { color: var(--warn); }
+    .pc-tag.live { color: var(--accent); }
+
+    .tokens-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .swatch {
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      background: var(--surface);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .swatch .chip {
+      height: 36px;
+      border-radius: 3px;
+      border: 1px solid rgba(20,22,27,0.08);
+    }
+    .swatch .name {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+    }
+    .swatch .hex {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--ink);
+    }
+  </style>
+</head>
+<body>
+
+<main class="page">
+
+  <section class="hero">
+    <div class="eyebrow">Forza · UI redesign · v4 · Atelier Light</div>
+    <h1>A new face for <span>the driver-training console.</span></h1>
+    <p>
+      A complete rethink of the visual language — warm paper background, deep-ink type, a single rally-orange signal accent. Sharper geometry, no glow, no glass. Same class names across the system, so all eleven pages adopt the new look without per-page rewrites.
+    </p>
+    <div class="meta">
+      <span class="pill accent">11 pages</span>
+      <span class="pill">design tokens</span>
+      <span class="pill">shared components</span>
+      <span class="pill">drop-in replacement</span>
+    </div>
+  </section>
+
+  <div class="section-title">Pages</div>
+  <div class="page-grid">
+
+    <a href="dashboard.html" class="page-card">
+      <div class="pc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+      <div class="pc-title">Dashboard <span class="pc-arrow">→</span></div>
+      <div class="pc-sub">Top-level workflow status: frames, labels, queue, active model.</div>
+      <div class="pc-tag live">Overview · live data</div>
+    </a>
+
+    <a href="ingest.html" class="page-card">
+      <div class="pc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13M7 11l5 5 5-5M4 21h16"/></svg></div>
+      <div class="pc-title">Ingest <span class="pc-arrow">→</span></div>
+      <div class="pc-sub">Capture live frames or import from YouTube and local video files.</div>
+      <div class="pc-tag">Data</div>
+    </a>
+
+    <a href="hud_mask.html" class="page-card">
+      <div class="pc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18" opacity="0.4"/></svg></div>
+      <div class="pc-title">HUD mask <span class="pc-arrow">→</span></div>
+      <div class="pc-sub">Mask the static game UI once per game version so it never confuses the model.</div>
+      <div class="pc-tag">Data</div>
+    </a>
+
+    <a href="label.html" class="page-card">
+      <div class="pc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4l6 6L9 21H3v-6L14 4z"/><path d="M13 5l6 6"/></svg></div>
+      <div class="pc-title">Label <span class="pc-arrow">→</span></div>
+      <div class="pc-sub">Auto-label with YOLO + SegFormer, then triage the uncertain frames by hand.</div>
+      <div class="pc-tag">Data</div>
+    </a>
+
+    <a href="train.html" class="page-card">
+      <div class="pc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="1"/><rect x="9" y="9" width="6" height="6" rx="0.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></div>
+      <div class="pc-title">Train <span class="pc-arrow">→</span></div>
+      <div class="pc-sub">Train the perception model with live loss, mIoU, and per-class coverage.</div>
+      <div class="pc-tag">Model</div>
+    </a>
+
+    <a href="compare.html" class="page-card">
+      <div class="pc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg></div>
+      <div class="pc-title">Compare <span class="pc-arrow">→</span></div>
+      <div class="pc-sub">Ground truth vs YOLO vs your model, side by side, with summary metrics.</div>
+      <div class="pc-tag">Model</div>
+    </a>
+
+    <a href="telemetry.html" class="page-card">
+      <div class="pc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17a8 8 0 1116 0"/><path d="M12 17l4-6"/><circle cx="12" cy="17" r="1.2" fill="currentColor"/></svg></div>
+      <div class="pc-title">Telemetry <span class="pc-arrow">→</span></div>
+      <div class="pc-sub">Verify Forza is broadcasting on UDP — speed, gear, position, track map.</div>
+      <div class="pc-tag">Runtime</div>
+    </a>
+
+    <a href="drive.html" class="page-card">
+      <div class="pc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M12 3v7M4.5 8.5l6 4M19.5 8.5l-6 4M7.5 20l3-6M16.5 20l-3-6"/></svg></div>
+      <div class="pc-title">Drive <span class="pc-arrow">→</span></div>
+      <div class="pc-sub">Engage the rule-based or PPO policy through the virtual gamepad.</div>
+      <div class="pc-tag">Runtime</div>
+    </a>
+
+    <a href="ppo.html" class="page-card">
+      <div class="pc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4a3 3 0 00-3 3 3 3 0 00-2 5 3 3 0 002 5 3 3 0 003 3h1V4H9z"/><path d="M15 4a3 3 0 013 3 3 3 0 012 5 3 3 0 01-2 5 3 3 0 01-3 3h-1V4h1z"/></svg></div>
+      <div class="pc-title">PPO train <span class="pc-arrow">→</span></div>
+      <div class="pc-sub">Reinforcement-learning loop: policy rollouts, reward curves, checkpoints.</div>
+      <div class="pc-tag">Runtime</div>
+    </a>
+
+    <a href="settings.html" class="page-card">
+      <div class="pc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></div>
+      <div class="pc-title">Settings <span class="pc-arrow">→</span></div>
+      <div class="pc-sub">Persistent preferences and pipeline tunables.</div>
+      <div class="pc-tag stub">System · stub</div>
+    </a>
+
+    <a href="help.html" class="page-card">
+      <div class="pc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 012-2h12v16H6a2 2 0 00-2 2V5z"/><path d="M4 19h14M8 7h7M8 11h5"/></svg></div>
+      <div class="pc-title">Help <span class="pc-arrow">→</span></div>
+      <div class="pc-sub">Workflow guide, troubleshooting, and the hotkey reference.</div>
+      <div class="pc-tag stub">System · stub</div>
+    </a>
+
+  </div>
+
+  <div class="section-title">Design tokens</div>
+  <div class="panel">
+    <div class="panel-header">Surfaces &amp; ink</div>
+    <div class="tokens-row">
+      <div class="swatch"><div class="chip" style="background: var(--bg)"></div><div class="name">--bg</div><div class="hex">#f4f1ea</div></div>
+      <div class="swatch"><div class="chip" style="background: var(--surface)"></div><div class="name">--surface</div><div class="hex">#ffffff</div></div>
+      <div class="swatch"><div class="chip" style="background: var(--surface-2)"></div><div class="name">--surface-2</div><div class="hex">#efece4</div></div>
+      <div class="swatch"><div class="chip" style="background: var(--surface-3)"></div><div class="name">--surface-3</div><div class="hex">#e6e2d8</div></div>
+      <div class="swatch"><div class="chip" style="background: var(--ink)"></div><div class="name">--ink</div><div class="hex">#14161b</div></div>
+      <div class="swatch"><div class="chip" style="background: var(--ink-dim)"></div><div class="name">--ink-dim</div><div class="hex">#4a4e58</div></div>
+    </div>
+
+    <div class="panel-header" style="margin-top: 22px;">Signal &amp; semantic</div>
+    <div class="tokens-row">
+      <div class="swatch"><div class="chip" style="background: var(--accent)"></div><div class="name">--accent</div><div class="hex">#e8501a</div></div>
+      <div class="swatch"><div class="chip" style="background: var(--ok)"></div><div class="name">--ok</div><div class="hex">#15803d</div></div>
+      <div class="swatch"><div class="chip" style="background: var(--warn)"></div><div class="name">--warn</div><div class="hex">#b45309</div></div>
+      <div class="swatch"><div class="chip" style="background: var(--danger)"></div><div class="name">--danger</div><div class="hex">#b91c1c</div></div>
+    </div>
+  </div>
+
+  <div class="section-title">Sample components</div>
+  <section class="grid grid-auto">
+    <div class="panel">
+      <div class="panel-header">Buttons</div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn">Default</button>
+        <button class="btn btn-primary">Primary</button>
+        <button class="btn btn-ok">Accept</button>
+        <button class="btn btn-warn">Caution</button>
+        <button class="btn btn-bad">Danger</button>
+        <button class="btn" disabled>Disabled</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Pills</div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+        <span class="pill">idle</span>
+        <span class="pill accent">live</span>
+        <span class="pill ok">connected</span>
+        <span class="pill warn">degraded</span>
+        <span class="pill bad">disconnected</span>
+        <span class="pill nums">v2 · module 1</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Progress</div>
+      <div class="progress-track"><div class="progress-fill" style="width: 62%"></div></div>
+      <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--ink-dim); font-family: var(--font-mono);">
+        <span>extracting</span><span>62.4%</span>
+      </div>
+    </div>
+
+    <div class="stat-card state-ok">
+      <div class="label">Frames captured</div>
+      <div class="value nums">18,420</div>
+      <div class="sub">3 game versions</div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  ForzaTek.mount('dashboard');
+</script>
+
+</body>
+</html>

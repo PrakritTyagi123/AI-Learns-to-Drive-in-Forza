@@ -2,46 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ForzaTek · Ingest</title>
+  <title>ForzaTek — Ingest</title>
   <link rel="stylesheet" href="app.css" />
   <script src="/eel.js"></script>
   <script src="app.js"></script>
   <style>
-    /* Page-local styles. Tokens come from app.css. */
-    .tabs {
-      display: flex; gap: 0;
-      border-bottom: 1px solid var(--edge);
-      margin-bottom: 16px;
-    }
-    .tab {
-      padding: 10px 16px;
-      background: transparent;
-      color: var(--ink-dim);
-      border: none;
-      border-bottom: 2px solid transparent;
-      font: inherit; font-size: 12px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      cursor: pointer;
-    }
-    .tab.active {
-      color: var(--ink);
-      border-bottom-color: var(--accent);
-    }
-    .tab:hover { color: var(--ink); }
-    .tab-pane { display: none; }
-    .tab-pane.active { display: block; }
+    /* Page-specific. Shared shells (tabs, pills, btn, progress) come from app.css. */
 
     .live-grid {
       display: grid;
-      grid-template-columns: 1fr 320px;
-      gap: 16px;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 18px;
     }
+    @media (max-width: 1100px) { .live-grid { grid-template-columns: 1fr; } }
+
+    /* Live preview — pure black canvas, hairline edge, fps pill at the corner */
     .preview {
-      background: #080a0d;
+      background: #000;
       border: 1px solid var(--edge);
       border-radius: var(--radius);
-      aspect-ratio: 16/9;
+      aspect-ratio: 16 / 9;
       display: flex; align-items: center; justify-content: center;
       overflow: hidden;
       position: relative;
@@ -49,123 +29,187 @@
     .preview img { width: 100%; height: 100%; object-fit: contain; }
     .preview .placeholder {
       color: var(--ink-faint);
+      font-family: var(--font-mono);
       font-size: 11px;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
     }
 
-    .stat-row {
-      display: flex; justify-content: space-between;
-      padding: 6px 0;
-      border-bottom: 1px solid var(--edge);
-      font-size: 12px;
+    .recorder-actions {
+      margin-top: 14px;
+      display: flex; gap: 8px;
     }
-    .stat-row:last-child { border-bottom: 0; }
-    .stat-row .k { color: var(--ink-dim); }
-    .stat-row .v { color: var(--ink); }
 
+    /* Session stats — clean two-column rows */
+    .session-panel .stat-row {
+      padding: 7px 0;
+      border-bottom: 1px solid var(--edge-sub);
+      font-size: 12.5px;
+    }
+
+    /* Bucket coverage table */
     .bucket-table {
-      width: 100%; border-collapse: collapse;
-      font-size: 11px;
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
     }
     .bucket-table th, .bucket-table td {
-      text-align: left; padding: 6px 8px;
-      border-bottom: 1px solid var(--edge);
+      text-align: left;
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--edge-sub);
     }
     .bucket-table th {
       color: var(--ink-faint);
+      font-family: var(--font-mono);
       font-weight: 500;
+      letter-spacing: 0.12em;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
-      font-size: 10px;
+      font-size: 9.5px;
+      border-bottom-color: var(--edge);
     }
-    .bucket-table td.nums { text-align: right; }
+    .bucket-table td.nums { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+    .bucket-table .empty {
+      color: var(--ink-faint);
+      font-size: 11px;
+      text-align: center;
+      padding: 16px;
+    }
 
+    /* Source-card list (used by YouTube + Local tabs) */
     .source-card {
-      background: var(--surface-2);
+      background: var(--surface);
       border: 1px solid var(--edge);
-      border-radius: var(--radius);
-      padding: 12px 14px;
+      border-radius: var(--radius-lg);
+      padding: 14px 16px;
       margin-bottom: 10px;
+      box-shadow: var(--shadow-1);
+      position: relative;
+      overflow: hidden;
+    }
+    .source-card::before {
+      content: '';
+      position: absolute; left: 0; right: 0; top: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+    }
+    .source-card .head {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 14px;
     }
     .source-card .title {
-      font-size: 13px; color: var(--ink);
-      margin-bottom: 4px;
+      font-size: 13.5px;
+      color: var(--ink);
+      font-weight: 500;
+      margin-bottom: 6px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .source-card .meta {
-      font-size: 11px; color: var(--ink-faint);
-      margin-bottom: 8px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-faint);
+      letter-spacing: 0.04em;
+      display: inline-flex; align-items: center; gap: 8px;
     }
-    .progress-track {
-      height: 4px; width: 100%;
-      background: var(--surface-3);
-      border-radius: 2px; overflow: hidden;
-      margin-top: 6px;
-    }
-    .progress-fill {
-      height: 100%; background: var(--accent);
-      transition: width 0.2s ease;
-    }
-    .progress-fill.indeterminate {
-      width: 40% !important;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      animation: indeterm 1.4s ease-in-out infinite;
-    }
-    @keyframes indeterm {
-      0%   { transform: translateX(-100%); }
-      100% { transform: translateX(250%); }
-    }
+    .source-card .actions { display: flex; gap: 6px; flex-shrink: 0; }
+
     .source-card .row {
       display: flex; justify-content: space-between;
-      font-size: 11px; color: var(--ink-dim);
-      margin-top: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-dim);
+      margin-top: 8px;
     }
+    .source-card .row .nums { color: var(--ink); }
 
+    /* Status pills inside source cards */
     .pill-status {
       display: inline-block;
-      padding: 2px 8px;
+      padding: 3px 9px;
       font-size: 10px;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.10em;
       text-transform: uppercase;
-      border-radius: 2px;
+      border-radius: var(--radius-pill);
       font-family: var(--font-mono);
+      font-weight: 500;
+      border: 1px solid var(--edge);
+      background: var(--surface-2);
+      color: var(--ink-dim);
     }
     .pill-status.pending,
-    .pill-status.registered  { background: var(--surface-3); color: var(--ink-dim); }
+    .pill-status.registered  { color: var(--ink-dim); }
     .pill-status.processing,
     .pill-status.downloading,
-    .pill-status.extracting  { background: var(--accent-bg); color: var(--accent); }
-    .pill-status.done        { background: var(--ok-bg); color: var(--ok); }
+    .pill-status.extracting  { color: var(--accent); border-color: rgba(232,80,26,0.35); background: var(--accent-bg); }
+    .pill-status.done        { color: var(--ok); border-color: rgba(21,128,61,0.35); background: var(--ok-bg); }
     .pill-status.failed,
-    .pill-status.error       { background: var(--danger-bg); color: var(--danger); }
-    .pill-status.cancelled   { background: var(--surface-3); color: var(--ink-faint); }
+    .pill-status.error       { color: var(--danger); border-color: rgba(185,28,28,0.35); background: var(--danger-bg); }
+    .pill-status.cancelled   { color: var(--ink-faint); }
 
-    .form-row { display: flex; gap: 10px; margin-bottom: 12px; }
-    .form-row input, .form-row select {
-      flex: 1;
-      background: var(--surface-3);
-      color: var(--ink);
-      border: 1px solid var(--edge);
-      border-radius: var(--radius);
-      padding: 8px 10px;
-      font: inherit; font-size: 12px;
+    /* Add-source form rows */
+    .form-row {
+      display: flex; gap: 10px;
+      margin-bottom: 12px;
+      align-items: stretch;
     }
-    .form-row select { flex: 0 0 120px; }
-    .form-row input:focus, .form-row select:focus {
-      border-color: var(--accent); outline: none;
+    .form-row input[type="text"], .form-row input[type="url"], .form-row select {
+      flex: 1;
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+    .form-row select { flex: 0 0 130px; }
+    .form-row input.biome { flex: 0 0 200px; }
+    .form-row .btn { padding: 0 16px; }
+
+    .add-help {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-faint);
+      letter-spacing: 0.04em;
+      line-height: 1.55;
+    }
+    .add-help .nums {
+      background: var(--surface-2);
+      border: 1px solid var(--edge);
+      padding: 1px 6px;
+      border-radius: 3px;
+      color: var(--ink-dim);
+    }
+
+    .sources-empty {
+      color: var(--ink-faint);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      padding: 22px;
+      text-align: center;
+      border: 1px dashed var(--edge);
+      border-radius: var(--radius);
+    }
+
+    .indeterminate {
+      width: 40% !important;
+      background: linear-gradient(90deg,
+                  transparent,
+                  var(--accent),
+                  transparent) !important;
+      animation: indeterm 1.6s ease-in-out infinite;
+    }
+    @keyframes indeterm {
+      0%   { transform: translateX(-120%); }
+      100% { transform: translateX(280%); }
     }
   </style>
 </head>
-<body class="with-sidebar">
+<body>
   <main class="page" id="pageRoot">
-    <div class="page-header">
+
+    <header class="page-header">
       <div>
-        <div class="page-title">Ingest</div>
-        <div class="page-subtitle">Capture frames from live game, YouTube, or a local video.</div>
+        <div class="crumb">Data · Module 1</div>
+        <h1>Ingest</h1>
+        <div class="page-sub">Capture frames from the live game, YouTube, or a local video file.</div>
       </div>
       <div class="page-header-right" id="pageHeaderRight"></div>
-    </div>
+    </header>
 
     <div class="tabs">
       <button class="tab active" data-tab="live">Live</button>
@@ -178,22 +222,22 @@
       <div class="live-grid">
         <div class="panel">
           <div class="panel-header">
-            <div class="section-label">Preview</div>
-            <span class="pill nums" id="liveFps">—</span>
+            <span>Preview</span>
+            <span class="pill nums" id="liveFps">— fps</span>
           </div>
           <div class="preview">
             <img id="livePreview" alt="" style="display:none;" />
             <div id="livePlaceholder" class="placeholder">no signal</div>
           </div>
-          <div style="margin-top: 12px; display: flex; gap: 8px;">
+          <div class="recorder-actions">
             <button class="btn btn-primary" id="recStart">Start recording</button>
             <button class="btn"             id="recStop" disabled>Stop</button>
           </div>
         </div>
 
-        <div>
-          <div class="panel" style="margin-bottom: 12px;">
-            <div class="section-label">Session</div>
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div class="panel session-panel">
+            <div class="panel-header">Session</div>
             <div class="stat-row"><span class="k">State</span>          <span class="v nums" id="liveState">idle</span></div>
             <div class="stat-row"><span class="k">Backend</span>        <span class="v nums" id="liveBackend">—</span></div>
             <div class="stat-row"><span class="k">Frames written</span> <span class="v nums" id="liveWritten">0</span></div>
@@ -204,12 +248,14 @@
           </div>
 
           <div class="panel">
-            <div class="section-label" style="margin-bottom: 8px;">Coverage by bucket</div>
+            <div class="panel-header">Coverage by bucket</div>
             <table class="bucket-table" id="bucketTable">
               <thead>
                 <tr><th>Game</th><th>Biome</th><th>Weather</th><th>Time</th><th class="nums">#</th></tr>
               </thead>
-              <tbody><tr><td colspan="5" style="color: var(--ink-faint); font-size:11px; text-align:center; padding: 14px;">no frames yet</td></tr></tbody>
+              <tbody>
+                <tr><td colspan="5" class="empty">no frames yet</td></tr>
+              </tbody>
             </table>
           </div>
         </div>
@@ -218,8 +264,8 @@
 
     <!-- YouTube tab -->
     <section class="tab-pane" id="tab-yt">
-      <div class="panel" style="margin-bottom: 16px;">
-        <div class="section-label" style="margin-bottom: 10px;">Add a YouTube video</div>
+      <div class="panel" style="margin-bottom: 18px;">
+        <div class="panel-header">Add a YouTube video</div>
         <div class="form-row">
           <input type="text" id="ytUrl" placeholder="https://www.youtube.com/watch?v=..." />
           <select id="ytGame">
@@ -228,23 +274,23 @@
             <option value="fh5" selected>FH5</option>
             <option value="fh6">FH6</option>
           </select>
-          <input type="text" id="ytBiome" placeholder="biome (optional)" style="flex: 0 0 200px;" />
+          <input type="text" id="ytBiome" class="biome" placeholder="biome (optional)" />
           <button class="btn btn-primary" id="ytAdd">Add</button>
         </div>
-        <div style="font-size: 11px; color: var(--ink-faint);">
+        <div class="add-help">
           Videos download into <span class="nums">data/videos/</span> then frames are extracted
           into the database. Cancel anytime — partial frames remain in the DB.
         </div>
       </div>
 
-      <div class="section-label" style="margin: 6px 0 10px;">Sources</div>
+      <div class="section-label" style="margin: 0 0 12px;">Sources</div>
       <div id="ytSources"></div>
     </section>
 
     <!-- Local video tab -->
     <section class="tab-pane" id="tab-local">
-      <div class="panel" style="margin-bottom: 16px;">
-        <div class="section-label" style="margin-bottom: 10px;">Add a local video file</div>
+      <div class="panel" style="margin-bottom: 18px;">
+        <div class="panel-header">Add a local video file</div>
         <div class="form-row">
           <input type="text" id="localPath" placeholder="(no file selected)" readonly />
           <select id="localGame">
@@ -253,16 +299,16 @@
             <option value="fh5" selected>FH5</option>
             <option value="fh6">FH6</option>
           </select>
-          <input type="text" id="localBiome" placeholder="biome (optional)" style="flex: 0 0 200px;" />
+          <input type="text" id="localBiome" class="biome" placeholder="biome (optional)" />
           <button class="btn"             id="localPick">Choose…</button>
           <button class="btn btn-primary" id="localAdd" disabled>Add</button>
         </div>
-        <div style="font-size: 11px; color: var(--ink-faint);">
+        <div class="add-help">
           A native file dialog opens. Supports mp4, mkv, mov, avi, webm.
         </div>
       </div>
 
-      <div class="section-label" style="margin: 6px 0 10px;">Sources</div>
+      <div class="section-label" style="margin: 0 0 12px;">Sources</div>
       <div id="localSources"></div>
     </section>
   </main>
@@ -288,9 +334,6 @@
     const KIND_YOUTUBE = "youtube_url";
     const KIND_LOCAL   = "video_file";
 
-    // Map DB status ('pending'/'processing'/'done'/'failed') and
-    // in-memory live status ('downloading'/'extracting'/etc) to a single
-    // display label. live_status (from live progress dict) wins when present.
     function effectiveStatus(s) {
       return s.live_status || s.status || "pending";
     }
@@ -364,7 +407,7 @@
       const tbody = $("bucketTable").querySelector("tbody");
       const buckets = (s.buckets || []).slice().sort((a, b) => b.count - a.count);
       if (!buckets.length) {
-        tbody.innerHTML = `<tr><td colspan="5" style="color: var(--ink-faint); font-size:11px; text-align:center; padding:14px;">no frames yet</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="empty">no frames yet</td></tr>`;
       } else {
         tbody.innerHTML = buckets.map(b => `
           <tr>
@@ -384,8 +427,6 @@
 
     // ─── Source-card rendering (shared by YouTube + Local) ────────────
     function renderSourceCard(s) {
-      // Backend's list_sources() flattens live progress fields directly
-      // onto the source row. No nested s.progress object.
       const status   = effectiveStatus(s);
       const dlPct    = s.download_pct || 0;
       const exPct    = s.extract_pct  || 0;
@@ -397,8 +438,6 @@
       const elapsed  = s.elapsed_sec || 0;
 
       const isYT = s.kind === KIND_YOUTUBE;
-      // Show download bar for YT until extraction starts. status='downloading'
-      // OR (we're processing AND no extract progress yet).
       const inDownload = isYT && (status === "downloading"
                                   || (status === "processing" && exPct < 0.1));
       const inExtract  = (status === "extracting"
@@ -408,33 +447,36 @@
       const startable  = canStart(status);
       const cancelable = isInFlight(status);
 
-      // Pretty status label that maps DB values to user-visible terms.
       const niceStatus = inDownload ? "downloading"
                        : (status === "processing" ? "extracting" : status);
 
       return `
         <div class="source-card" data-id="${s.id}">
-          <div style="display:flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+          <div class="head">
             <div style="flex: 1; min-width: 0;">
               <div class="title">${escapeHtml(s.title || s.uri)}</div>
               <div class="meta">
                 <span class="pill-status ${niceStatus}">${niceStatus}</span>
-                · ${s.kind} · ${escapeHtml(s.game_version || "?")}${s.biome_override ? " · " + escapeHtml(s.biome_override) : ""}
+                <span>·</span>
+                <span>${s.kind}</span>
+                <span>·</span>
+                <span>${escapeHtml(s.game_version || "?")}</span>
+                ${s.biome_override ? `<span>·</span><span>${escapeHtml(s.biome_override)}</span>` : ""}
               </div>
             </div>
-            <div style="display:flex; gap: 6px;">
+            <div class="actions">
               ${startable  ? `<button class="btn btn-primary" data-act="start"  data-id="${s.id}">Start</button>` : ""}
-              ${cancelable ? `<button class="btn"             data-act="cancel" data-id="${s.id}">Cancel</button>` : ""}
+              ${cancelable ? `<button class="btn btn-bad"     data-act="cancel" data-id="${s.id}">Cancel</button>` : ""}
             </div>
           </div>
 
           ${inDownload ? `
-            <div class="row" style="margin-top: 10px;"><span>download</span><span class="nums">${dlPct > 0 ? dlPct.toFixed(1) + "%" : "in progress"}</span></div>
+            <div class="row" style="margin-top: 12px;"><span>download</span><span class="nums">${dlPct > 0 ? dlPct.toFixed(1) + "%" : "in progress"}</span></div>
             <div class="progress-track"><div class="progress-fill ${dlPct === 0 ? "indeterminate" : ""}" style="width: ${dlPct || 0}%;"></div></div>
           ` : ""}
 
           ${inExtract ? `
-            <div class="row" style="margin-top: ${inDownload ? "10px" : "6px"};"><span>extract</span><span class="nums">${exPct.toFixed(1)}%</span></div>
+            <div class="row" style="margin-top: ${inDownload ? "12px" : "10px"};"><span>extract</span><span class="nums">${exPct.toFixed(1)}%</span></div>
             <div class="progress-track"><div class="progress-fill" style="width: ${exPct}%;"></div></div>
           ` : ""}
 
@@ -453,7 +495,7 @@
     }
 
     function emptyMsg(text) {
-      return `<div style="color: var(--ink-faint); font-size: 12px; padding: 18px; text-align: center; border: 1px dashed var(--edge); border-radius: var(--radius);">${text}</div>`;
+      return `<div class="sources-empty">${text}</div>`;
     }
 
     function bindSourceActions(container) {
@@ -476,7 +518,6 @@
       try { sources = await eel_("ingest_list_sources"); } catch (e) { return; }
       if (!Array.isArray(sources)) return;
 
-      // Use the canonical schema kind values, not the old 'youtube'/'local'.
       const yt    = sources.filter(s => s.kind === KIND_YOUTUBE);
       const local = sources.filter(s => s.kind === KIND_LOCAL);
 
@@ -490,8 +531,6 @@
       bindSourceActions(localEl);
     }
 
-    // Poll faster — UI feels stuck at 1.5s intervals when frames are
-    // landing every few hundred ms.
     setInterval(pollSources, 1000);
     pollSources();
 

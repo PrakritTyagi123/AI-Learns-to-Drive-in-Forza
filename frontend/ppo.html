@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ForzaTek — PPO train</title>
+  <link rel="stylesheet" href="app.css">
+  <script type="text/javascript" src="/eel.js"></script>
+  <script src="app.js"></script>
+  <style>
+    .stub-hero {
+      padding: 40px 40px 36px;
+      background: var(--surface);
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-1);
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 26px;
+    }
+    .stub-hero::before {
+      content: '';
+      position: absolute; left: 0; right: 0; top: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(180,83,9,0.40), transparent);
+    }
+    .stub-hero h2 {
+      font-size: 28px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+      max-width: 720px;
+      line-height: 1.2;
+      margin-bottom: 14px;
+    }
+    .stub-hero h2 .accent { color: var(--accent); }
+    .stub-hero p {
+      color: var(--ink-dim);
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 640px;
+    }
+    .stub-hero .module-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--font-mono); font-size: 10.5px;
+      letter-spacing: 0.20em; text-transform: uppercase;
+      color: var(--warn);
+      padding: 4px 12px;
+      border: 1px solid rgba(180,83,9,0.35);
+      background: var(--warn-bg);
+      border-radius: var(--radius-pill);
+      margin-bottom: 22px;
+    }
+    .stub-hero .module-badge .dot {
+      width: 6px; height: 6px;
+      background: var(--warn);
+      border-radius: 50%;
+    }
+    .stub-hero .meta-row {
+      margin-top: 26px;
+      display: flex; gap: 8px; flex-wrap: wrap;
+    }
+
+    .section-title {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      letter-spacing: 0.22em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      margin: 0 0 14px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .section-title::after {
+      content: ''; flex: 1; height: 1px;
+      background: var(--edge);
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .preview-tile {
+      padding: 18px;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+      position: relative;
+      overflow: hidden;
+    }
+    .preview-tile::before {
+      content: '';
+      position: absolute; left: 0; right: 0; top: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+    }
+    .pt-icon {
+      width: 32px; height: 32px;
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      border: 1px solid var(--edge);
+      display: inline-flex; align-items: center; justify-content: center;
+      color: var(--accent);
+      margin-bottom: 14px;
+    }
+    .pt-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }
+    .pt-desc {
+      font-size: 12.5px;
+      color: var(--ink-dim);
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+
+<main class="page">
+
+  <header class="page-header">
+    <div>
+      <div class="crumb">Runtime · Module 8</div>
+      <h1>PPO train</h1>
+    </div>
+    <div class="pills">
+      <span class="pill warn">Module 8</span>
+    </div>
+  </header>
+
+  <section class="stub-hero">
+    <div class="module-badge"><span class="dot"></span>Coming soon</div>
+    <h2>Close the loop with <span class="accent">reinforcement learning.</span></h2>
+    <p>PPO will train a policy on top of the perception model — rewarding the agent for staying on the racing line, avoiding walls, and finishing laps faster. This page exposes the rollout loop, reward shaping, and checkpoint promotion.</p>
+    <div class="meta-row">
+      <a href="dashboard.html" class="pill accent">← Dashboard</a>
+      <span class="pill">ships in module 8</span>
+    </div>
+  </section>
+
+  <div class="section-title">What this page will surface</div>
+  <div class="preview-grid">
+      <div class="preview-tile">
+        <div class="pt-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-3-6.7L21 8M21 3v5h-5"/></svg></div>
+        <div class="pt-title">Rollout loop</div>
+        <div class="pt-desc">Start / pause / stop a rollout, watch the live frame + actions, see steps-per-second, episode length, and termination reason.</div>
+      </div>
+      <div class="preview-tile">
+        <div class="pt-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M4 15l4-5 4 3 4-7 4 5"/></svg></div>
+        <div class="pt-title">Reward curves</div>
+        <div class="pt-desc">Per-episode total reward + smoothed running mean, broken out by component (lane, speed, wall penalty, lap progress).</div>
+      </div>
+      <div class="preview-tile">
+        <div class="pt-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4a3 3 0 00-3 3 3 3 0 00-2 5 3 3 0 002 5 3 3 0 003 3h1V4H9z"/><path d="M15 4a3 3 0 013 3 3 3 0 012 5 3 3 0 01-2 5 3 3 0 01-3 3h-1V4h1z"/></svg></div>
+        <div class="pt-title">Policy update</div>
+        <div class="pt-desc">Actor / critic loss, KL divergence, entropy bonus, clipped fraction — the usual PPO diagnostics so you can spot collapses early.</div>
+      </div>
+      <div class="preview-tile">
+        <div class="pt-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="1"/><rect x="9" y="9" width="6" height="6" rx="0.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></div>
+        <div class="pt-title">Checkpoints</div>
+        <div class="pt-desc">Promote any checkpoint to active for the Drive page. Keep a few rounds of history with their reward + lap-time deltas.</div>
+      </div>
+  </div>
+
+</main>
+
+<script>
+  ForzaTek.mount('ppo');
+</script>
+
+</body>
+</html>

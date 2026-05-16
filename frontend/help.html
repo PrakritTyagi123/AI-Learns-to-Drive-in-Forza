@@ -3,11 +3,89 @@
 <head>
   <meta charset="UTF-8">
   <title>ForzaTek — Help</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="app.css">
   <script type="text/javascript" src="/eel.js"></script>
   <script src="app.js"></script>
+  <style>
+    .help-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    @media (max-width: 1000px) { .help-grid { grid-template-columns: 1fr; } }
+
+    .step-list { counter-reset: step; padding: 0; list-style: none; }
+    .step-list li {
+      counter-increment: step;
+      padding: 12px 14px 12px 52px;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      margin-bottom: 8px;
+      position: relative;
+      font-size: 13.5px;
+      color: var(--ink);
+      line-height: 1.55;
+    }
+    .step-list li::before {
+      content: counter(step, decimal-leading-zero);
+      position: absolute;
+      left: 14px; top: 12px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      padding: 3px 8px;
+      border: 1px solid rgba(232,80,26,0.35);
+      background: var(--accent-bg);
+      border-radius: 3px;
+    }
+    .step-list li a {
+      font-weight: 500;
+      color: var(--ink);
+      border-bottom: 1px dotted var(--accent);
+    }
+    .step-list li a:hover { color: var(--accent); }
+    .step-list li .desc { color: var(--ink-dim); font-size: 12.5px; margin-top: 4px; }
+
+    .hotkeys {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 18px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .hotkeys .hk {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--edge-sub);
+    }
+    .hotkeys .hk:last-child { border-bottom: 0; }
+    .hotkeys .hk .what { color: var(--ink-dim); }
+    .hotkeys .hk .keys { display: inline-flex; gap: 4px; }
+
+    .stub-banner {
+      padding: 14px 16px;
+      background: var(--warn-bg);
+      border: 1px solid rgba(180,83,9,0.35);
+      border-radius: var(--radius-lg);
+      color: var(--warn);
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      letter-spacing: 0.05em;
+      line-height: 1.6;
+      margin-bottom: 22px;
+    }
+    .stub-banner .lead {
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .stub-banner .body { color: var(--ink-dim); }
+  </style>
 </head>
 <body>
 
@@ -19,26 +97,74 @@
       <h1>Help</h1>
     </div>
     <div class="pills">
-      <span class="pill warn">PLACEHOLDER</span>
+      <span class="pill warn">Module 9</span>
     </div>
   </header>
 
-  <section class="placeholder-block">
-    <p style="margin-bottom: 8px;">
-      <strong>This page is a stub.</strong>
-    </p>
-    <p>
-      The help guide — workflow walkthrough, troubleshooting, hotkey reference —
-      ships in <strong>Module 9</strong>.
-    </p>
-    <p style="margin-top: 12px;">
-      In the meantime, the Dashboard's "Where to start" panel lists every
-      step in the right order.
-    </p>
-    <p style="margin-top: 12px;">
-      <a href="dashboard.html">← Back to Dashboard</a>
-    </p>
-  </section>
+  <div class="stub-banner">
+    <div class="lead">Help guide — preview</div>
+    <div class="body">
+      The full walkthrough, troubleshooting, and complete hotkey reference ship in Module 9.
+      Below is the workflow summary and the labeling hotkeys for now.
+    </div>
+  </div>
+
+  <div class="help-grid">
+
+    <section class="panel">
+      <div class="panel-header">Workflow · where to start</div>
+      <ol class="step-list">
+        <li>
+          <a href="ingest.html">Ingest</a>
+          <div class="desc">Capture or import frames — live game, YouTube, or a local video file.</div>
+        </li>
+        <li>
+          <a href="hud_mask.html">HUD mask</a>
+          <div class="desc">Mask the static game UI once per game version so it never confuses the model.</div>
+        </li>
+        <li>
+          <a href="label.html">Label</a>
+          <div class="desc">Auto-label with YOLO + SegFormer, then fix the uncertain frames by hand.</div>
+        </li>
+        <li>
+          <a href="train.html">Train</a>
+          <div class="desc">Train the perception model on confirmed labels.</div>
+        </li>
+        <li>
+          <a href="compare.html">Compare</a>
+          <div class="desc">Your model vs YOLO, side by side, with summary metrics.</div>
+        </li>
+        <li>
+          <a href="telemetry.html">Telemetry</a>
+          <div class="desc">Verify Forza is broadcasting on UDP.</div>
+        </li>
+        <li>
+          <a href="drive.html">Drive</a>
+          <div class="desc">Engage the rule-based or PPO policy through the virtual gamepad.</div>
+        </li>
+      </ol>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">Labeling hotkeys</div>
+      <div class="hotkeys">
+        <div class="hk"><span class="what">accept proposal</span><span class="keys"><kbd>A</kbd></span></div>
+        <div class="hk"><span class="what">save edits</span><span class="keys"><kbd>Space</kbd></span></div>
+        <div class="hk"><span class="what">reset frame</span><span class="keys"><kbd>R</kbd></span></div>
+        <div class="hk"><span class="what">unlabel</span><span class="keys"><kbd>U</kbd></span></div>
+        <div class="hk"><span class="what">skip</span><span class="keys"><kbd>N</kbd></span></div>
+        <div class="hk"><span class="what">brush tool</span><span class="keys"><kbd>B</kbd></span></div>
+        <div class="hk"><span class="what">box tool</span><span class="keys"><kbd>V</kbd></span></div>
+        <div class="hk"><span class="what">class 1 · offroad</span><span class="keys"><kbd>1</kbd></span></div>
+        <div class="hk"><span class="what">class 2 · road</span><span class="keys"><kbd>2</kbd></span></div>
+        <div class="hk"><span class="what">class 3 · curb</span><span class="keys"><kbd>3</kbd></span></div>
+        <div class="hk"><span class="what">class 4 · wall</span><span class="keys"><kbd>4</kbd></span></div>
+        <div class="hk"><span class="what">brush smaller / bigger</span><span class="keys"><kbd>[</kbd><kbd>]</kbd></span></div>
+        <div class="hk"><span class="what">undo / redo</span><span class="keys"><kbd>Ctrl</kbd><kbd>Z</kbd> / <kbd>Y</kbd></span></div>
+      </div>
+    </section>
+
+  </div>
 
 </main>
 

@@ -194,7 +194,7 @@
     .class-iou-tile .swatch {
       width: 8px; height: 8px;
       border-radius: 2px;
-      border: 1px solid rgba(255,255,255,0.3);
+      border: 1px solid var(--edge-hot);
     }
     .class-iou-tile .v {
       font-variant-numeric: tabular-nums;
@@ -264,7 +264,7 @@
     }
 
     .log-box {
-      background: #0a0c10;
+      background: var(--surface-3);
       border: 1px solid var(--edge);
       border-radius: var(--radius);
       padding: 10px 12px;
@@ -345,7 +345,7 @@
     .ckpt-row .ckpt-classes .swatch {
       width: 7px; height: 7px;
       border-radius: 2px;
-      border: 1px solid rgba(255,255,255,0.3);
+      border: 1px solid var(--edge-hot);
     }
     .ckpt-row .ckpt-classes .val {
       font-variant-numeric: tabular-nums;
@@ -736,10 +736,32 @@
     });
 
     /* ─── Chart.js theme & build ─────────────────────────── */
+    function tok(name, fallback) {
+      try {
+        const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return v || fallback;
+      } catch (e) { return fallback; }
+    }
+    function chartPalette() {
+      return {
+        ink:      tok('--ink',       '#14161b'),
+        inkDim:   tok('--ink-dim',   '#4a4e58'),
+        inkFaint: tok('--ink-faint', '#8c8e96'),
+        edge:     tok('--edge',      '#d6d2c6'),
+        edgeSub:  tok('--edge-sub',  '#e4e0d4'),
+        surface:  tok('--surface',   '#ffffff'),
+        surface2: tok('--surface-2', '#efece4'),
+        accent:   tok('--accent',    '#e8501a'),
+        warn:     tok('--warn',      '#b45309'),
+        ok:       tok('--ok',        '#15803d'),
+        danger:   tok('--danger',    '#b91c1c'),
+      };
+    }
     function applyChartDefaults() {
       if (!window.Chart) return;
-      Chart.defaults.color = "#a8b0bb";
-      Chart.defaults.borderColor = "#2a313c";
+      const p = chartPalette();
+      Chart.defaults.color = p.inkDim;
+      Chart.defaults.borderColor = p.edge;
       Chart.defaults.font.family =
         "'JetBrains Mono', ui-monospace, Consolas, monospace";
       Chart.defaults.font.size = 11;
@@ -748,6 +770,7 @@
     function buildLossChart() {
       const canvas = $("chartLoss");
       if (!canvas) return;
+      const p = chartPalette();
       S.charts.loss = new Chart(canvas.getContext("2d"), {
         type: "line",
         data: {
@@ -756,8 +779,8 @@
             {
               label: "train loss",
               data: [],
-              borderColor: "#6b8faf",
-              backgroundColor: "rgba(107, 143, 175, 0.15)",
+              borderColor: p.accent,
+              backgroundColor: p.accent + '26',
               borderWidth: 1.5,
               tension: 0.25,
               pointRadius: 2.5,
@@ -768,8 +791,8 @@
             {
               label: "val loss",
               data: [],
-              borderColor: "#d4a04a",
-              backgroundColor: "rgba(212, 160, 74, 0.15)",
+              borderColor: p.warn,
+              backgroundColor: p.warn + '26',
               borderWidth: 1.5,
               tension: 0.25,
               pointRadius: 2.5,
@@ -788,14 +811,14 @@
             legend: {
               position: "top",
               align: "end",
-              labels: { boxWidth: 12, boxHeight: 2, padding: 12 },
+              labels: { boxWidth: 12, boxHeight: 2, padding: 12, color: p.inkDim },
             },
             tooltip: {
-              backgroundColor: "#1f242d",
-              borderColor: "#2a313c",
+              backgroundColor: p.surface,
+              borderColor: p.edge,
               borderWidth: 1,
-              titleColor: "#e6e8eb",
-              bodyColor: "#a8b0bb",
+              titleColor: p.ink,
+              bodyColor: p.inkDim,
               padding: 10,
               displayColors: true,
               boxWidth: 8, boxHeight: 8,
@@ -813,20 +836,53 @@
           },
           scales: {
             x: {
-              title: { display: true, text: "epoch", color: "#6b7480", font: { size: 10 } },
-              grid: { color: "rgba(42, 49, 60, 0.5)", drawBorder: false },
-              ticks: { color: "#6b7480", maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+              title: { display: true, text: "epoch", color: p.inkFaint, font: { size: 10 } },
+              grid:  { color: p.edgeSub, drawBorder: false },
+              ticks: { color: p.inkFaint, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
             },
             y: {
-              title: { display: true, text: "loss", color: "#6b7480", font: { size: 10 } },
-              grid: { color: "rgba(42, 49, 60, 0.5)", drawBorder: false },
-              ticks: { color: "#6b7480" },
+              title: { display: true, text: "loss", color: p.inkFaint, font: { size: 10 } },
+              grid:  { color: p.edgeSub, drawBorder: false },
+              ticks: { color: p.inkFaint },
               beginAtZero: false,
             },
           },
         },
       });
     }
+
+    // Re-skin the loss chart when the theme flips, without losing data.
+    function reskinLossChart() {
+      const c = S.charts.loss;
+      if (!c) return;
+      const p = chartPalette();
+      applyChartDefaults();
+      // datasets
+      if (c.data.datasets[0]) {
+        c.data.datasets[0].borderColor = p.accent;
+        c.data.datasets[0].backgroundColor = p.accent + '26';
+      }
+      if (c.data.datasets[1]) {
+        c.data.datasets[1].borderColor = p.warn;
+        c.data.datasets[1].backgroundColor = p.warn + '26';
+      }
+      // tooltip + legend + scales
+      const opts = c.options;
+      opts.plugins.legend.labels.color = p.inkDim;
+      opts.plugins.tooltip.backgroundColor = p.surface;
+      opts.plugins.tooltip.borderColor = p.edge;
+      opts.plugins.tooltip.titleColor = p.ink;
+      opts.plugins.tooltip.bodyColor = p.inkDim;
+      for (const axis of ['x', 'y']) {
+        if (opts.scales[axis]) {
+          opts.scales[axis].title.color = p.inkFaint;
+          opts.scales[axis].grid.color  = p.edgeSub;
+          opts.scales[axis].ticks.color = p.inkFaint;
+        }
+      }
+      c.update('none');
+    }
+    window.addEventListener('ftk:themechange', reskinLossChart);
 
     function pushEpoch(epoch, train_loss, val_loss) {
       const last = S.series.epoch.length

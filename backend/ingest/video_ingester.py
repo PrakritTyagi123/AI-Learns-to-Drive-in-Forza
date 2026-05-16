@@ -11,6 +11,22 @@ YouTube + local video → frames pipeline. Fully rewritten with:
     is actually moving.
   * The schema-canonical kind values (`youtube_url` / `video_file`) and
     status values (`pending|processing|done|failed`).
+  * Glob-based output-file lookup after yt-dlp finishes — no more silent
+    "finished but no output file found" when yt-dlp picks an unexpected
+    extension (mkv fallback, merge failure leaving fragments, etc.).
+  * Safer yt-dlp format selector that prefers pre-merged single-file
+    downloads, falling back to merge only when necessary.
+  * yt-dlp stderr is captured and the tail is included in the error
+    message when yt-dlp exits non-zero, so you can see WHY it failed.
+
+QUALITY-FIRST DEFAULTS (changed from earlier versions):
+  * yt-dlp pulls up to 1440p (not 1080p), giving a cleaner 1080p after
+    downscale than asking YouTube for 1080p directly.
+  * Frames are kept at native 1080p instead of being shrunk to 720p.
+  * Frames are encoded as PNG (lossless) instead of JPEG-85. The DB
+    column is still named `frame_jpeg` for backward compat, but the
+    bytes inside are PNG. cv2.imdecode auto-detects, so existing
+    consumers keep working.
 
 This file is self-contained — drop it in and overwrite the old one.
 """
@@ -21,6 +37,7 @@ import re
 import subprocess
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -63,6 +80,16 @@ _YT_RE = re.compile(
     r"(?:youtube\.com/(?:watch\?v=|shorts/|live/)|youtu\.be/)([A-Za-z0-9_-]{6,})"
 )
 
+# Extensions yt-dlp may drop alongside the main video that we should ignore
+# when looking for "the output file".
+_SIDECAR_EXTS = {
+    ".vtt", ".srt", ".ass", ".lrc",
+    ".json", ".info.json",
+    ".jpg", ".jpeg", ".png", ".webp",
+    ".description",
+    ".part", ".ytdl", ".temp",
+}
+
 
 def is_youtube_url(s: str) -> bool:
     return bool(_YT_RE.search(s or ""))
@@ -80,7 +107,7 @@ class _Progress:
     frames_written: int = 0
     frames_skipped_dup: int = 0
     frames_skipped_menu: int = 0
-    frames_failed_insert: int = 0     # NEW: counts INSERT failures so they're visible
+    frames_failed_insert: int = 0     # counts INSERT failures so they're visible
     total_frames: int = 0
     started_at: float = 0.0
     ended_at: float = 0.0
@@ -358,6 +385,26 @@ def _set_db_status(
 
 # ─── Internal: YouTube download ────────────────────────────────────────────
 
+def _find_downloaded_file(source_id: int) -> Optional[Path]:
+    """Find the actual video file yt-dlp produced for this source.
+
+    We don't assume the extension because --merge-output-format mp4 isn't
+    always honored (e.g. when remux fails, yt-dlp falls back to mkv/webm).
+    Pick the largest non-sidecar file matching yt_{id}.*
+    """
+    candidates = [
+        p for p in VIDEOS_DIR.glob(f"yt_{source_id}.*")
+        if p.is_file()
+        and p.suffix.lower() not in _SIDECAR_EXTS
+        and p.stat().st_size > 1024  # skip tiny stub files
+    ]
+    if not candidates:
+        return None
+    # Largest file wins — that's the merged video, not a leftover fragment.
+    candidates.sort(key=lambda p: p.stat().st_size, reverse=True)
+    return candidates[0]
+
+
 def _download_youtube(
     src: dict, prog: _Progress, cancel_evt: threading.Event
 ) -> Path:
@@ -366,11 +413,25 @@ def _download_youtube(
     log.info("downloading source %d via yt-dlp", src["id"])
     _set_db_status(src["id"], "downloading")
 
-    # We DON'T pass --no-progress here. Instead we parse yt-dlp's progress
-    # lines so the UI gets a live download_pct.
+    # Format selector strategy (quality-first):
+    #   We pull up to 1440p so that when we downscale to 1080p in OpenCV,
+    #   we're working from a higher-bitrate source. YouTube's 1080p tier is
+    #   noticeably more compressed than its 1440p tier — pulling 1440p and
+    #   downscaling gives a visibly cleaner 1080p frame than asking for
+    #   1080p directly.
+    #   1) Prefer a single pre-merged file (no merge step → no merge failures)
+    #   2) Then prefer video+audio merge with mp4-compatible streams
+    #   3) Fall back to whatever's available at <=1440p
+    fmt = (
+        "bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/"
+        "bestvideo[height<=1440]+bestaudio/"
+        "best[height<=1440][ext=mp4]/"
+        "best[height<=1440]"
+    )
+
     cmd = [
         "yt-dlp",
-        "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+        "-f", fmt,
         "--merge-output-format", "mp4",
         "--no-playlist",
         "--no-warnings",
@@ -391,9 +452,15 @@ def _download_youtube(
     #   [download]  37.4% of 127.43MiB at  18.55MiB/s ETA 00:04
     pct_re = re.compile(r"\[download\]\s+([\d.]+)%")
     last_log = 0.0
+    # Keep the last 30 lines of yt-dlp output so we can include them in
+    # any error message — saves a lot of guesswork when something fails.
+    recent_lines: deque[str] = deque(maxlen=30)
 
     try:
         for line in proc.stdout:
+            line = line.rstrip()
+            recent_lines.append(line)
+
             if cancel_evt.is_set():
                 proc.terminate()
                 try:
@@ -418,14 +485,32 @@ def _download_youtube(
         rc = proc.wait()
 
     if rc != 0:
-        raise RuntimeError(f"yt-dlp exited with code {rc}")
+        tail = "\n".join(list(recent_lines)[-10:])
+        raise RuntimeError(
+            f"yt-dlp exited with code {rc}. Last output:\n{tail}"
+        )
 
-    for ext in ("mp4", "mkv", "webm"):
-        candidate = VIDEOS_DIR / f"yt_{src['id']}.{ext}"
-        if candidate.exists():
-            prog.download_pct = 100.0
-            return candidate
-    raise RuntimeError("yt-dlp finished but no output file found")
+    # yt-dlp succeeded — find whatever file it actually produced.
+    chosen = _find_downloaded_file(src["id"])
+    if chosen is None:
+        # Build a useful diagnostic so we can see what IS in the directory.
+        listing = ", ".join(
+            f"{p.name} ({p.stat().st_size} B)"
+            for p in VIDEOS_DIR.glob(f"yt_{src['id']}*")
+        ) or "<nothing>"
+        tail = "\n".join(list(recent_lines)[-10:])
+        raise RuntimeError(
+            f"yt-dlp finished (rc=0) but no output file found.\n"
+            f"Files matching yt_{src['id']}*: {listing}\n"
+            f"Last yt-dlp output:\n{tail}"
+        )
+
+    prog.download_pct = 100.0
+    log.info(
+        "source %d downloaded to %s (%.1f MiB)",
+        src["id"], chosen.name, chosen.stat().st_size / 1024 / 1024,
+    )
+    return chosen
 
 
 # ─── Internal: video walker ────────────────────────────────────────────────
@@ -443,8 +528,15 @@ def _walk_video(
     try:
         cfg = settings_mod.get_settings()
         target_fps_out = max(1, int(cfg.get("capture_fps", 15)))
-        target_h = int(cfg.get("frame_resize_height", 720))
-        jpeg_q = int(cfg.get("jpeg_quality", 85))
+        # Quality-first defaults: keep native 1080p instead of downscaling
+        # to 720p. If a setting is present, it overrides.
+        target_h = int(cfg.get("frame_resize_height", 1080))
+        # PNG compression level (0–9). 1 = nearly the same size as 9 for
+        # most images, but much faster to write. Lossless either way.
+        png_level = int(cfg.get("png_compression_level", 1))
+        # Kept for backward compat in case anything else reads it, but
+        # we no longer encode as JPEG.
+        _ = int(cfg.get("jpeg_quality", 95))
         gv = src.get("game_version") or cfg.get("default_game_version", "fh5")
         biome_override = src.get("biome_override")
 
@@ -499,11 +591,15 @@ def _walk_video(
             if len(ring) > ring_max:
                 ring.pop(0)
 
-            ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, jpeg_q])
+            # Encode as PNG (lossless). We keep the `frame_jpeg` column name
+            # for backward compat with other code, but the bytes are PNG —
+            # cv2.imdecode auto-detects the format from the file's magic
+            # bytes, so any consumer using imdecode keeps working unchanged.
+            ok, buf = cv2.imencode(".png", bgr, [cv2.IMWRITE_PNG_COMPRESSION, png_level])
             if not ok:
                 idx += 1
                 continue
-            jpeg = buf.tobytes()
+            frame_bytes = buf.tobytes()
             h, w = bgr.shape[:2]
             video_t = idx / src_fps if src_fps > 0 else 0.0
 
@@ -523,7 +619,7 @@ def _walk_video(
                            VALUES (?, ?, 'video', ?, ?, NULL, NULL, ?, ?, ?, ?, ?)""",
                         (
                             time.time(), src["id"], gv, biome_override,
-                            ph_signed, jpeg, w, h, video_t,
+                            ph_signed, frame_bytes, w, h, video_t,
                         ),
                     )
                 kept += 1
