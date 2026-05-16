@@ -63,7 +63,11 @@ from backend.labeling import routes  as labeling_routes
 
 # Module 5 — Perception                                           
 from backend.perception import eel_api as perception_eel_api      
-from backend.perception import routes  as perception_routes       
+from backend.perception import routes  as perception_routes  
+
+# Module 6 — Compare
+from backend.compare import eel_api as compare_eel_api
+from backend.compare import routes  as compare_routes
 
 # ─── Logging ───────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -146,6 +150,9 @@ def _build_fastapi_app() -> FastAPI:
     # Module 5 — Perception
     perception_routes.register_routes(app)
 
+    # Module 6 — Compare routes
+    compare_routes.register_routes(app)
+
     return app
 
 
@@ -202,6 +209,9 @@ def _register_all_eel_apis() -> None:
 
     # Module 5 — Perception
     perception_eel_api.register_eel(eel)
+
+    # Module 6 — Compare
+    compare_eel_api.register_eel(eel)
 
 # ─── Boot ──────────────────────────────────────────────────────────────────
 def main() -> int:

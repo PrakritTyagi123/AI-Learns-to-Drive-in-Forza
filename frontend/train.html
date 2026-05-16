@@ -851,6 +851,35 @@
       }
     }
 
+    /* ─── History rehydration on page load ───────────────────
+       The chart series live in JS memory — a reload mid-run wipes the chart
+       until the next epoch poll arrives. This pulls per-epoch history from
+       disk so the chart looks "continuous" even after a refresh. Safe to
+       call multiple times. */
+    async function loadHistory() {
+      const runName = (E.cfgName.value || "").trim();
+      let hist = null;
+      try {
+        hist = await eel.perception_history(runName)();
+      } catch (e) {
+        // Eel function not wired yet — silent. Polling path will populate
+        // the chart from epoch 1 onwards as new data arrives.
+        return;
+      }
+      if (!hist || hist.error) return;
+      if (!Array.isArray(hist.epochs) || hist.epochs.length === 0) return;
+
+      // Reset and refill series from history. Future poll updates will
+      // append on top of this via pushEpoch() once new epochs complete.
+      S.series = {
+        epoch:      hist.epochs.slice(),
+        train_loss: (hist.train_loss || []).slice(),
+        val_loss:   (hist.val_loss   || []).slice(),
+      };
+      S.lastEpochSeen = hist.epochs[hist.epochs.length - 1];
+      refreshLossChart();
+    }
+
     /* ─── Form lock state ────────────────────────────────── */
     function setRunning(running) {
       [E.cfgName, E.cfgEpochs, E.cfgBatch, E.cfgLR, E.cfgVal,
@@ -1283,6 +1312,14 @@
       }
     };
 
+    // Switching run-names re-pulls history for the new run.
+    E.cfgName.addEventListener("change", () => {
+      S.series = { epoch: [], train_loss: [], val_loss: [] };
+      S.lastEpochSeen = -1;
+      refreshLossChart();
+      loadHistory();
+    });
+
     /* ─── Cache panel ─────────────────────────────────────── */
     async function refreshCache() {
       let s = null;
@@ -1392,6 +1429,11 @@
       refreshLossChart();
 
       buildClassIouRow();
+
+      // Rehydrate the chart from disk BEFORE polling kicks in. This way the
+      // loss chart is populated within ~200ms of page load instead of staying
+      // blank until the next epoch completes.
+      loadHistory();
 
       loadArch();
       loadDeviceInfo();

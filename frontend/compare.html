@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Compare · ForzaTek v2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css" />
+  <script type="text/javascript" src="/eel.js"></script>
+  <script src="app.js"></script>
+  <style>
+    .compare-toolbar { display: flex; gap: 10px; align-items: center; padding: 10px 12px;
+      background: var(--surface); border: 1px solid var(--edge); border-radius: var(--radius);
+      flex-wrap: wrap; margin-bottom: 14px; }
+    .compare-toolbar label { font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 0.14em; color: var(--ink-faint); text-transform: uppercase; }
+    .compare-toolbar select, .compare-toolbar input {
+      background: var(--surface-2); color: var(--ink);
+      border: 1px solid var(--edge); border-radius: var(--radius);
+      padding: 5px 8px; font-family: var(--font-mono); font-size: 12px; }
+    .compare-toolbar select:hover, .compare-toolbar input:hover { border-color: var(--edge-hot); }
+
+    .btn { background: var(--surface-2); color: var(--ink);
+      border: 1px solid var(--edge); border-radius: var(--radius);
+      padding: 6px 12px; font-family: var(--font-sans); font-size: 12px; cursor: pointer; }
+    .btn:hover { border-color: var(--edge-hot); background: var(--surface-3); }
+    .btn-primary { background: var(--accent-bg); border-color: var(--accent-dim); color: var(--ink); }
+    .btn-primary:hover { border-color: var(--accent); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .frame-id { font-family: var(--font-mono); font-size: 12px;
+      color: var(--ink-dim); letter-spacing: 0.06em; }
+
+    .status-pills { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+    .pill { font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 3px 8px; border-radius: 10px;
+      border: 1px solid var(--edge); color: var(--ink-faint); }
+    .pill.ok    { color: var(--ok);     border-color: var(--ok);     background: var(--ok-bg); }
+    .pill.warn  { color: var(--warn);   border-color: var(--warn);   background: var(--warn-bg); }
+    .pill.bad   { color: var(--danger); border-color: var(--danger); background: var(--danger-bg); }
+
+    .warmup-banner { padding: 12px 14px; background: var(--warn-bg);
+      border: 1px solid var(--warn); border-radius: var(--radius);
+      color: var(--warn); font-family: var(--font-mono); font-size: 12px;
+      margin-bottom: 14px; display: none; }
+    .warmup-banner.show { display: block; }
+    .warmup-banner .title { letter-spacing: 0.14em; text-transform: uppercase;
+      font-weight: 600; margin-bottom: 4px; }
+    .warmup-banner .body { color: var(--ink-dim); font-size: 11px; line-height: 1.5; }
+
+    .panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    @media (max-width: 1100px) { .panels { grid-template-columns: 1fr; } }
+
+    .panel { background: var(--surface); border: 1px solid var(--edge);
+      border-radius: var(--radius); display: flex; flex-direction: column; min-width: 0; }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid var(--edge);
+      display: flex; align-items: center; justify-content: space-between; }
+    .panel-title { font-family: var(--font-mono); font-size: 11px;
+      letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); }
+    .panel-title .dot { display: inline-block; width: 8px; height: 8px;
+      border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+    .panel-title .dot.gt   { background: #78c878; }
+    .panel-title .dot.yolo { background: #50a0e6; }
+    .panel-title .dot.ours { background: #e6c850; }
+    .panel-sub { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+
+    .panel-img-wrap { background: #000; aspect-ratio: 16 / 9;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; position: relative; }
+    .panel-img-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .panel-img-wrap .placeholder { font-family: var(--font-mono); font-size: 11px;
+      color: var(--ink-faint); letter-spacing: 0.1em;
+      text-transform: uppercase; text-align: center; padding: 12px; }
+    .panel-img-wrap .spinner { width: 22px; height: 22px;
+      border: 2px solid var(--edge); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+      margin: 0 auto 10px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .panel-metrics { padding: 10px 12px; display: flex; flex-direction: column;
+      gap: 8px; font-size: 12px; }
+    .metric-row { display: grid; grid-template-columns: 70px 1fr 60px;
+      gap: 8px; align-items: center; }
+    .metric-row .k { font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 0.1em; color: var(--ink-faint); text-transform: uppercase; }
+    .bar { height: 6px; background: var(--surface-3); border-radius: 3px; overflow: hidden; }
+    .bar > span { display: block; height: 100%; background: var(--accent); }
+    .metric-row .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+      font-size: 12px; color: var(--ink); text-align: right; }
+    .metric-row .v.dim { color: var(--ink-faint); }
+
+    .det-card { margin-top: 8px; padding: 8px; background: var(--surface-2);
+      border: 1px solid var(--edge); border-radius: var(--radius); }
+    .det-card .header { font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 0.12em; color: var(--ink-faint);
+      text-transform: uppercase; margin-bottom: 6px; }
+    .det-row { display: grid; grid-template-columns: 1fr repeat(3, 50px);
+      gap: 6px; font-family: var(--font-mono); font-size: 11px;
+      color: var(--ink-dim); padding: 2px 0; }
+    .det-row.head { color: var(--ink-faint); font-size: 9px;
+      letter-spacing: 0.12em; text-transform: uppercase; }
+    .det-row .v { font-variant-numeric: tabular-nums; text-align: right; color: var(--ink); }
+
+    /* ─── Summary section — cleaned up ─── */
+    .summary-section { margin-top: 16px; background: var(--surface);
+      border: 1px solid var(--edge); border-radius: var(--radius); padding: 14px; }
+    .summary-section h3 { font-family: var(--font-mono); font-size: 11px;
+      letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); margin-bottom: 10px; }
+    .summary-controls { display: flex; gap: 8px; align-items: center;
+      flex-wrap: wrap; margin-bottom: 12px; }
+
+    .summary-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-family: var(--font-mono); font-size: 12px;
+      table-layout: fixed;
+    }
+    .summary-table colgroup col.col-metric  { width: auto; }
+    .summary-table colgroup col.col-num     { width: 110px; }
+    .summary-table colgroup col.col-winner  { width: 100px; }
+    .summary-table colgroup col.col-n       { width: 70px; }
+
+    .summary-table thead th {
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      font-weight: 500;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--edge);
+      text-align: left;
+    }
+    .summary-table thead th.num,
+    .summary-table thead th.winner {
+      text-align: right;
+    }
+    .summary-table thead th.winner { text-align: center; }
+
+    .summary-table tbody td {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--edge);
+      vertical-align: middle;
+    }
+    .summary-table tbody tr:last-child td { border-bottom: none; }
+    .summary-table tbody tr:hover td { background: var(--surface-2); }
+
+    .summary-table td.metric { color: var(--ink); }
+
+    /* Numeric cells — right-aligned tabular numerals */
+    .summary-table td.num {
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      color: var(--ink);
+      padding-right: 14px;
+    }
+    .summary-table td.num.win  { color: var(--ok);        font-weight: 500; }
+    .summary-table td.num.lose { color: var(--ink-faint); }
+    .summary-table td.num.na   { color: var(--ink-faint); }
+
+    /* Tiny "%" suffix lower-cased */
+    .summary-table td.num .unit {
+      color: var(--ink-faint);
+      font-size: 10px;
+      margin-left: 2px;
+      font-weight: 400;
+    }
+
+    /* Winner pill — centered, badge-style, color-coded */
+    .summary-table td.winner { text-align: center; }
+    .winner-badge {
+      display: inline-block;
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      padding: 2px 9px;
+      border-radius: 10px;
+      border: 1px solid var(--edge);
+      color: var(--ink-faint);
+      font-weight: 500;
+      min-width: 50px;
+    }
+    .winner-badge.ours { color: var(--ok);   border-color: var(--ok);   background: var(--ok-bg); }
+    .winner-badge.yolo { color: #6fa9d6;     border-color: #355a73;     background: rgba(80,160,230,0.08); }
+    .winner-badge.tie  { color: var(--ink-faint); }
+    .winner-badge.na   { color: var(--ink-faint); opacity: 0.6; }
+
+    /* N column — small, neutral */
+    .summary-table td.n-cell {
+      text-align: right;
+      color: var(--ink-faint);
+      font-variant-numeric: tabular-nums;
+      font-size: 11px;
+      padding-right: 14px;
+    }
+
+    .empty { padding: 24px; text-align: center; font-family: var(--font-mono);
+      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--ink-faint); }
+
+    .toast-stack { position: fixed; bottom: 16px; right: 16px;
+      display: flex; flex-direction: column; gap: 6px; z-index: 200; }
+    .toast { padding: 8px 12px; background: var(--surface-2);
+      border: 1px solid var(--edge); border-radius: var(--radius);
+      font-size: 12px; color: var(--ink); max-width: 320px; }
+    .toast.warn { border-color: var(--warn); color: var(--warn); }
+    .toast.bad  { border-color: var(--danger); color: var(--danger); }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-header">
+      <div>
+        <div class="page-title">Compare</div>
+        <div class="page-sub">Ground truth · YOLO · Ours — side by side</div>
+      </div>
+      <div id="statusPills" class="status-pills"></div>
+    </header>
+
+    <div id="warmupBanner" class="warmup-banner">
+      <div class="title">Loading models…</div>
+      <div class="body" id="warmupBody">
+        First boot loads YOLO + SegFormer + your trained perception model.
+      </div>
+    </div>
+
+    <section class="compare-toolbar">
+      <label for="strategySel">Strategy</label>
+      <select id="strategySel">
+        <option value="random">Random</option>
+        <option value="recent">Recent</option>
+        <option value="disagreement">Disagreement</option>
+      </select>
+
+      <button id="btnNext" class="btn btn-primary" disabled>Next frame</button>
+
+      <span id="frameIdLabel" class="frame-id">no frame loaded</span>
+
+      <div style="flex:1"></div>
+
+      <label for="frameIdInput">Frame ID</label>
+      <input id="frameIdInput" type="number" min="1" style="width: 90px" />
+      <button id="btnGoto" class="btn" disabled>Go</button>
+    </section>
+
+    <section class="panels">
+      <div class="panel" id="panelGT">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot gt"></span>Ground Truth</div>
+          <div class="panel-sub" id="gtSub">—</div>
+        </div>
+        <div class="panel-img-wrap"><div class="placeholder">click "Next frame" to load</div></div>
+        <div class="panel-metrics" id="metricsGT"></div>
+      </div>
+
+      <div class="panel" id="panelYolo">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot yolo"></span>YOLO + SegFormer</div>
+          <div class="panel-sub" id="yoloSub">—</div>
+        </div>
+        <div class="panel-img-wrap"><div class="placeholder">no frame</div></div>
+        <div class="panel-metrics" id="metricsYolo"></div>
+      </div>
+
+      <div class="panel" id="panelOurs">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot ours"></span>Ours</div>
+          <div class="panel-sub" id="oursSub">—</div>
+        </div>
+        <div class="panel-img-wrap"><div class="placeholder">no frame</div></div>
+        <div class="panel-metrics" id="metricsOurs"></div>
+      </div>
+    </section>
+
+    <section class="summary-section">
+      <h3>Summary across N frames</h3>
+      <div class="summary-controls">
+        <label for="summaryN">N</label>
+        <input id="summaryN" type="number" min="1" max="500" value="50" style="width: 80px" />
+        <button id="btnSummary" class="btn btn-primary" disabled>Run summary</button>
+        <button id="btnSummaryCancel" class="btn" disabled>Cancel</button>
+        <span id="summaryStatus" class="frame-id">idle</span>
+      </div>
+      <div id="summaryTableWrap">
+        <div class="empty">No summary yet — click "Run summary" to compare across the last N labeled frames.</div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toastStack" class="toast-stack"></div>
+
+  <script>
+  (function () {
+    'use strict';
+
+    const FASTAPI_BASE = 'http://127.0.0.1:8001';
+    const LOG_PREFIX = '[Compare]';
+
+    function log(...args) { console.log(LOG_PREFIX, ...args); }
+    function logErr(...args) { console.error(LOG_PREFIX, ...args); }
+
+    function mountSidebar() {
+      if (window.ForzaTek && typeof window.ForzaTek.mount === 'function') {
+        window.ForzaTek.mount('compare');
+      }
+    }
+
+    function toast(msg, kind) {
+      const stack = document.getElementById('toastStack');
+      if (!stack) return;
+      const el = document.createElement('div');
+      el.className = 'toast' + (kind ? ' ' + kind : '');
+      el.textContent = msg;
+      stack.appendChild(el);
+      setTimeout(() => { el.remove(); }, 4500);
+    }
+
+    // ─── Formatters ───
+    function fmtPctShort(v) {
+      if (v == null || !isFinite(v)) return '—';
+      return (v * 100).toFixed(1);
+    }
+    function fmtPctCell(v) {
+      // For the summary table — returns HTML with a "%" unit suffix.
+      if (v == null || !isFinite(v)) return '<span class="dim">—</span>';
+      return (v * 100).toFixed(1) + '<span class="unit">%</span>';
+    }
+
+    // ─── State ───
+    let _modelsReady = false;
+    let _busyLoading = false;
+    let _summaryRunning = false;
+    let _seenIds = [];
+
+    function pill(text, kind) {
+      const el = document.createElement('span');
+      el.className = 'pill' + (kind ? ' ' + kind : '');
+      el.textContent = text;
+      return el;
+    }
+    function pillKind(state) {
+      if (state === 'ok') return 'ok';
+      if (state === 'error') return 'bad';
+      return 'warn';
+    }
+
+    async function refreshStatus() {
+      try {
+        const s = await eel.compare_status()();
+        if (!s || !s.ok) {
+          logErr('compare_status returned', s);
+          return;
+        }
+        const ws = s.warmup || {};
+        const wrap = document.getElementById('statusPills');
+        wrap.innerHTML = '';
+        wrap.appendChild(pill(`${s.n_labeled} labeled`, ''));
+        wrap.appendChild(pill('YOLO', pillKind(ws.yolo)));
+        wrap.appendChild(pill('Ours', pillKind(ws.ours)));
+
+        const banner = document.getElementById('warmupBanner');
+        const body = document.getElementById('warmupBody');
+        if (ws.phase === 'running') {
+          banner.classList.add('show');
+          body.textContent = `Loading models… YOLO: ${ws.yolo} · Ours: ${ws.ours}`;
+          setReady(false);
+        } else if (ws.phase === 'done') {
+          banner.classList.remove('show');
+          const anyOk = (ws.yolo === 'ok') || (ws.ours === 'ok');
+          setReady(anyOk);
+          if (!anyOk) {
+            banner.classList.add('show');
+            body.textContent = 'Both YOLO and Ours failed to load. Check terminal.';
+          }
+        } else {
+          banner.classList.add('show');
+          body.textContent = 'Models not yet loaded. Triggering warmup…';
+          try { await eel.compare_warmup()(); } catch (_) {}
+        }
+      } catch (e) {
+        logErr('compare_status failed:', e);
+      }
+    }
+
+    function setReady(ready) {
+      _modelsReady = !!ready;
+      const blocked = !_modelsReady || _busyLoading;
+      document.getElementById('btnNext').disabled = blocked;
+      document.getElementById('btnGoto').disabled = blocked;
+      document.getElementById('btnSummary').disabled = blocked || _summaryRunning;
+    }
+    function setBusy(busy) {
+      _busyLoading = !!busy;
+      setReady(_modelsReady);
+    }
+
+    function clearPanelMetrics(elId) {
+      const el = document.getElementById(elId);
+      if (el) el.innerHTML = '';
+    }
+    function setPanelPlaceholder(panelId, text) {
+      const panel = document.getElementById(panelId);
+      if (!panel) return;
+      const wrap = panel.querySelector('.panel-img-wrap');
+      wrap.innerHTML = '';
+      const ph = document.createElement('div');
+      ph.className = 'placeholder';
+      ph.textContent = text;
+      wrap.appendChild(ph);
+    }
+    function setPanelLoading(panelId) {
+      const panel = document.getElementById(panelId);
+      if (!panel) return;
+      const wrap = panel.querySelector('.panel-img-wrap');
+      wrap.innerHTML = '<div class="placeholder"><div class="spinner"></div>running…</div>';
+    }
+    function setPanelImage(panelId, src, label) {
+      const panel = document.getElementById(panelId);
+      if (!panel) return;
+      const wrap = panel.querySelector('.panel-img-wrap');
+      const img = new Image();
+      img.style.width = '100%';
+      img.style.height = '100%';
+      img.style.objectFit = 'contain';
+      img.style.display = 'block';
+      img.onload = () => { wrap.innerHTML = ''; wrap.appendChild(img); };
+      img.onerror = () => { wrap.innerHTML = '<div class="placeholder">image load failed</div>'; };
+      img.src = src;
+    }
+
+    function metricRow(label, value) {
+      const finite = (typeof value === 'number') && Number.isFinite(value);
+      const pct = finite ? Math.max(0, Math.min(1, value)) : 0;
+      const row = document.createElement('div');
+      row.className = 'metric-row';
+      row.innerHTML = `
+        <div class="k">${label}</div>
+        <div class="bar"><span style="width:${(pct*100).toFixed(1)}%"></span></div>
+        <div class="v ${finite ? '' : 'dim'}">${finite ? fmtPctShort(value) : '—'}</div>`;
+      return row;
+    }
+
+    function renderSegMetrics(elId, segMetrics) {
+      const el = document.getElementById(elId);
+      el.innerHTML = '';
+      if (!segMetrics || typeof segMetrics !== 'object') {
+        el.innerHTML = '<div class="k" style="color:var(--ink-faint)">no seg metrics</div>';
+        return;
+      }
+      ['offroad','road','curb','wall'].forEach(c => {
+        el.appendChild(metricRow(c + ' IoU', segMetrics['iou_' + c]));
+      });
+      el.appendChild(metricRow('mean IoU', segMetrics.miou));
+      el.appendChild(metricRow('pixel acc', segMetrics.pixel_acc));
+    }
+
+    function renderDetCard(elId, detMetrics) {
+      const el = document.getElementById(elId);
+      if (!detMetrics || typeof detMetrics !== 'object') return;
+      const classes = Object.keys(detMetrics).filter(k => k !== 'mAP');
+      if (!classes.length) return;
+
+      const card = document.createElement('div');
+      card.className = 'det-card';
+      card.innerHTML = `
+        <div class="header">Detection (IoU @ 0.5)</div>
+        <div class="det-row head"><div>class</div><div class="v">P</div><div class="v">R</div><div class="v">AP</div></div>`;
+      classes.forEach(cls => {
+        const m = detMetrics[cls] || {};
+        const row = document.createElement('div');
+        row.className = 'det-row';
+        row.innerHTML = `<div>${cls}</div>
+          <div class="v">${fmtPctShort(m.precision)}</div>
+          <div class="v">${fmtPctShort(m.recall)}</div>
+          <div class="v">${fmtPctShort(m.ap)}</div>`;
+        card.appendChild(row);
+      });
+      if (detMetrics.mAP && Number.isFinite(detMetrics.mAP.map)) {
+        const row = document.createElement('div');
+        row.className = 'det-row';
+        row.innerHTML = `<div>mAP</div><div class="v"></div><div class="v"></div><div class="v">${fmtPctShort(detMetrics.mAP.map)}</div>`;
+        card.appendChild(row);
+      }
+      el.appendChild(card);
+    }
+
+    function imgUrl(kind, frameId, bust) {
+      return `${FASTAPI_BASE}/api/compare/frame/${frameId}/${kind}_overlay.jpg?t=${bust}`;
+    }
+
+    function applyResult(res) {
+      if (!res || !res.ok) {
+        const err = (res && res.error) ? res.error : 'unknown error';
+        toast('Failed: ' + err, 'bad');
+        document.getElementById('frameIdLabel').textContent = 'load failed';
+        ['panelGT', 'panelYolo', 'panelOurs'].forEach(id => setPanelPlaceholder(id, 'load failed'));
+        return;
+      }
+      const bust = Date.now();
+      document.getElementById('frameIdLabel').textContent =
+        `frame #${res.frame_id} · ${res.width}×${res.height}` +
+        (res.game_version ? ` · ${res.game_version}` : '') +
+        ` · disagree ${(res.disagreement * 100).toFixed(1)}%`;
+
+      const yMet = res.yolo_metrics || {};
+      const oMet = res.ours_metrics || {};
+      const have = res.have_overlays || {};
+
+      document.getElementById('gtSub').textContent = 'reference';
+      document.getElementById('yoloSub').textContent =
+        res.have_yolo ? `${yMet.n_boxes ?? 0} boxes` : 'unavailable';
+      document.getElementById('oursSub').textContent =
+        res.have_ours ? `${oMet.n_boxes ?? 0} boxes` : 'unavailable';
+
+      if (have.gt) setPanelImage('panelGT', imgUrl('gt', res.frame_id, bust), 'GT');
+      else setPanelPlaceholder('panelGT', 'no GT overlay');
+
+      if (have.yolo && res.have_yolo) setPanelImage('panelYolo', imgUrl('yolo', res.frame_id, bust), 'YOLO');
+      else setPanelPlaceholder('panelYolo', 'unavailable');
+
+      if (have.ours && res.have_ours) setPanelImage('panelOurs', imgUrl('ours', res.frame_id, bust), 'Ours');
+      else setPanelPlaceholder('panelOurs', 'unavailable');
+
+      clearPanelMetrics('metricsGT');
+      const gtMsg = document.createElement('div');
+      gtMsg.className = 'k';
+      gtMsg.style.color = 'var(--ink-faint)';
+      gtMsg.textContent = 'reference (no metrics)';
+      document.getElementById('metricsGT').appendChild(gtMsg);
+
+      clearPanelMetrics('metricsYolo');
+      if (res.have_yolo) {
+        renderSegMetrics('metricsYolo', yMet.seg);
+        renderDetCard('metricsYolo', yMet.det);
+      } else {
+        document.getElementById('metricsYolo').innerHTML =
+          '<div class="k" style="color:var(--ink-faint)">prelabeler unavailable</div>';
+      }
+
+      clearPanelMetrics('metricsOurs');
+      if (res.have_ours) {
+        renderSegMetrics('metricsOurs', oMet.seg);
+        renderDetCard('metricsOurs', oMet.det);
+      } else {
+        document.getElementById('metricsOurs').innerHTML =
+          '<div class="k" style="color:var(--ink-faint)">no active perception model</div>';
+      }
+    }
+
+    async function loadNext() {
+      if (!_modelsReady || _busyLoading) return;
+      const strategy = document.getElementById('strategySel').value || 'random';
+      const exclude = (strategy === 'recent') ? [] : _seenIds.slice(-20);
+
+      setBusy(true);
+      document.getElementById('frameIdLabel').textContent = 'loading…';
+      ['panelGT', 'panelYolo', 'panelOurs'].forEach(setPanelLoading);
+
+      const t0 = Date.now();
+      try {
+        const res = await eel.compare_next(strategy, exclude)();
+        if (res && res.ok) _seenIds.push(res.frame_id);
+        applyResult(res);
+      } catch (e) {
+        logErr('compare_next threw:', e);
+        toast('compare_next error: ' + e, 'bad');
+        applyResult(null);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function loadById(fid) {
+      if (!_modelsReady || _busyLoading) return;
+      const id = parseInt(fid, 10);
+      if (!Number.isFinite(id) || id < 1) { toast('Enter a valid frame id', 'warn'); return; }
+      setBusy(true);
+      document.getElementById('frameIdLabel').textContent = `loading frame ${id}…`;
+      ['panelGT', 'panelYolo', 'panelOurs'].forEach(setPanelLoading);
+      try {
+        const res = await eel.compare_frame(id)();
+        if (res && res.ok) _seenIds.push(res.frame_id);
+        applyResult(res);
+      } catch (e) {
+        logErr('compare_frame threw:', e);
+        toast('compare_frame error: ' + e, 'bad');
+        applyResult(null);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function setSummaryStatus(text) {
+      document.getElementById('summaryStatus').textContent = text;
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+    }
+
+    // ─── Summary table — cleaner version ───
+    function renderSummaryTable(data) {
+      const wrap = document.getElementById('summaryTableWrap');
+      if (!data || !data.rows || !data.rows.length) {
+        wrap.innerHTML = '<div class="empty">No metrics produced.</div>';
+        return;
+      }
+
+      const head = `
+        <table class="summary-table">
+          <colgroup>
+            <col class="col-metric">
+            <col class="col-num">
+            <col class="col-num">
+            <col class="col-winner">
+            <col class="col-n">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th class="num">YOLO</th>
+              <th class="num">Ours</th>
+              <th class="winner">Winner</th>
+              <th class="num">N</th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+      const rows = data.rows.map(r => {
+        // CSS classes: the winner's number cell gets .win (green),
+        // the loser's gets .lose (dim). Ties / N/A stay neutral.
+        let yCls = '';
+        let oCls = '';
+        if (r.winner === 'yolo') { yCls = 'win'; oCls = 'lose'; }
+        else if (r.winner === 'ours') { yCls = 'lose'; oCls = 'win'; }
+        else if (r.winner === 'n/a') { yCls = 'na'; oCls = 'na'; }
+        // else 'tie' — both stay neutral
+
+        const winnerLabel = r.winner === 'n/a' ? 'n/a' : r.winner;
+        const winnerCls = r.winner === 'n/a' ? 'na' : r.winner;
+
+        return `
+          <tr>
+            <td class="metric">${escapeHtml(r.metric)}</td>
+            <td class="num ${yCls}">${fmtPctCell(r.yolo)}</td>
+            <td class="num ${oCls}">${fmtPctCell(r.ours)}</td>
+            <td class="winner">
+              <span class="winner-badge ${winnerCls}">${winnerLabel}</span>
+            </td>
+            <td class="n-cell">${r.n ?? 0}</td>
+          </tr>`;
+      }).join('');
+
+      wrap.innerHTML = head + rows + '</tbody></table>';
+    }
+
+    async function runSummary() {
+      if (_summaryRunning || !_modelsReady) return;
+      const n = parseInt(document.getElementById('summaryN').value, 10) || 50;
+      _summaryRunning = true;
+      setReady(_modelsReady);
+      document.getElementById('btnSummaryCancel').disabled = false;
+      setSummaryStatus(`running on last ${n} frames…`);
+      document.getElementById('summaryTableWrap').innerHTML = '<div class="empty">Running…</div>';
+      try {
+        const result = await eel.compare_summary(n)();
+        if (!result || !result.ok) {
+          toast(result && result.error ? result.error : 'summary failed', 'bad');
+          setSummaryStatus('failed');
+          return;
+        }
+        setSummaryStatus(`done — ${result.n_frames} frames in ${result.elapsed_s}s` +
+          (result.cancelled ? ' (cancelled)' : '') +
+          (result.n_skipped ? `, ${result.n_skipped} skipped` : ''));
+        renderSummaryTable(result);
+      } catch (e) {
+        logErr('summary threw', e);
+        toast('summary error: ' + e, 'bad');
+        setSummaryStatus('error');
+      } finally {
+        _summaryRunning = false;
+        document.getElementById('btnSummaryCancel').disabled = true;
+        setReady(_modelsReady);
+      }
+    }
+
+    async function cancelSummary() {
+      try { await eel.compare_summary_cancel()(); setSummaryStatus('cancelling…'); }
+      catch (e) { /* ignore */ }
+    }
+
+    function init() {
+      mountSidebar();
+      document.getElementById('btnNext').addEventListener('click', loadNext);
+      document.getElementById('btnGoto').addEventListener('click', () => {
+        loadById(document.getElementById('frameIdInput').value);
+      });
+      document.getElementById('frameIdInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') loadById(e.target.value);
+      });
+      document.getElementById('btnSummary').addEventListener('click', runSummary);
+      document.getElementById('btnSummaryCancel').addEventListener('click', cancelSummary);
+
+      document.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        if (e.key === 'n' || e.key === 'N') { e.preventDefault(); loadNext(); }
+        else if (e.key === 's' || e.key === 'S') {
+          const sel = document.getElementById('strategySel');
+          sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length;
+        } else if (e.key === 'r' || e.key === 'R') { if (!_summaryRunning) runSummary(); }
+      });
+
+      refreshStatus();
+      const fastTimer = setInterval(async () => {
+        await refreshStatus();
+        if (_modelsReady) {
+          clearInterval(fastTimer);
+          setInterval(refreshStatus, 8000);
+        }
+      }, 1500);
+
+      window.__compareDebug = {
+        loadNext, loadById, refreshStatus,
+        state: () => ({ _modelsReady, _busyLoading, _summaryRunning,
+                         seenCount: _seenIds.length }),
+      };
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  })();
+  </script>
+</body>
+</html>
